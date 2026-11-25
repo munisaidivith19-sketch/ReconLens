@@ -1,5 +1,6 @@
 """FastAPI application: routers, middleware, startup/shutdown."""
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -13,6 +14,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 from app import db
 from app.api import auth, health, scans
 from app.config import get_settings
+from app.scanners.tech_stack import load_fingerprints, warm_up
 from app.services import scan_runner
 
 MAX_BODY_BYTES = 16 * 1024
@@ -29,11 +31,15 @@ async def lifespan(_app: FastAPI):
     )
     # httpx logs full URLs at INFO; keep them out of the logs.
     logging.getLogger("httpx").setLevel(logging.WARNING)
+    # Load fingerprint data once (kept in memory for every scan).
+    await asyncio.to_thread(load_fingerprints)
+    warm_task = asyncio.create_task(asyncio.to_thread(warm_up))
     await db.connect()
     interrupted = await scan_runner.mark_interrupted(db.get_db())
     if interrupted:
         log.info("Marked %d leftover scans as interrupted", interrupted)
     yield
+    warm_task.cancel()
     await db.close()
 
 

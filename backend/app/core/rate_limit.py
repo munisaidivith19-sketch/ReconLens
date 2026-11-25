@@ -4,6 +4,7 @@ The service runs as a single process on Render, so an in-memory sliding window i
 sufficient for auth endpoints.
 """
 
+import asyncio
 import time
 from collections import defaultdict, deque
 from datetime import UTC, datetime
@@ -95,3 +96,34 @@ class SlidingWindowLimiter:
 # 10 login attempts and 5 registrations per IP per 15 minutes.
 login_limiter = SlidingWindowLimiter(max_requests=10, window_seconds=15 * 60)
 register_limiter = SlidingWindowLimiter(max_requests=5, window_seconds=15 * 60)
+
+
+class AsyncRateLimiter:
+    """At most ``max_calls`` per ``period`` seconds for an outbound API (process-wide).
+
+    ``acquire(max_wait)`` waits for a free slot up to ``max_wait`` seconds and returns
+    False instead of waiting longer, so callers can degrade gracefully.
+    """
+
+    def __init__(self, max_calls: int, period: float):
+        self.max_calls = max_calls
+        self.period = period
+        self._calls: deque[float] = deque()
+
+    async def acquire(self, max_wait: float = 0.0) -> bool:
+        deadline = time.monotonic() + max_wait
+        while True:
+            # No awaits in this block, so it is atomic within the event loop (no lock needed).
+            now = time.monotonic()
+            while self._calls and now - self._calls[0] >= self.period:
+                self._calls.popleft()
+            if len(self._calls) < self.max_calls:
+                self._calls.append(now)
+                return True
+            wait = self.period - (now - self._calls[0])
+            if time.monotonic() + wait > deadline:
+                return False
+            await asyncio.sleep(min(wait, max(0.0, deadline - time.monotonic())) + 0.01)
+
+    def reset(self) -> None:
+        self._calls.clear()
