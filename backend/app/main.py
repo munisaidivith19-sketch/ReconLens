@@ -11,8 +11,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app import db
-from app.api import auth, health
+from app.api import auth, health, scans
 from app.config import get_settings
+from app.services import scan_runner
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -29,6 +30,9 @@ async def lifespan(_app: FastAPI):
     # httpx logs full URLs at INFO; keep them out of the logs.
     logging.getLogger("httpx").setLevel(logging.WARNING)
     await db.connect()
+    interrupted = await scan_runner.mark_interrupted(db.get_db())
+    if interrupted:
+        log.info("Marked %d leftover scans as interrupted", interrupted)
     yield
     await db.close()
 
@@ -160,6 +164,7 @@ def create_app() -> FastAPI:
 
     app.include_router(health.router)
     app.include_router(auth.router)
+    app.include_router(scans.router)
     return app
 
 

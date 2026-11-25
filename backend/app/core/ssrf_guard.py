@@ -375,6 +375,7 @@ class SafeHttpClient:
         allow_truncate: bool = False,
         follow_redirects: bool = True,
         max_redirects: int = MAX_REDIRECTS,
+        timeout: httpx.Timeout | float | None = None,
     ) -> SafeResponse:
         current = url
         if params:
@@ -388,7 +389,7 @@ class SafeHttpClient:
                 raise BlockedTargetError("invalid_host", "An absolute URL is required.")
             ips = await resolve_and_validate(target.host)
             ip = ips[0]
-            resp = await self._request_once(target, ip, headers, max_bytes, allow_truncate)
+            resp = await self._request_once(target, ip, headers, max_bytes, allow_truncate, timeout)
             resp.redirects = list(redirects)
             if follow_redirects and resp.status_code in (301, 302, 303, 307, 308):
                 location = resp.headers.get("location")
@@ -408,6 +409,7 @@ class SafeHttpClient:
         headers: dict[str, str] | None,
         max_bytes: int,
         allow_truncate: bool,
+        timeout: httpx.Timeout | float | None = None,
     ) -> SafeResponse:
         default_port = ALLOWED_SCHEMES[target.scheme]
         host_header = target.host if target.port == default_port else f"{target.host}:{target.port}"
@@ -417,7 +419,13 @@ class SafeHttpClient:
         extensions = {"sni_hostname": target.host} if target.scheme == "https" else {}
         ip_url = _url_for_ip(target.scheme, ip, target.port, target.path)
 
-        request = self._client.build_request("GET", ip_url, headers=req_headers, extensions=extensions)
+        request = self._client.build_request(
+            "GET",
+            ip_url,
+            headers=req_headers,
+            extensions=extensions,
+            **({"timeout": timeout} if timeout is not None else {}),
+        )
         response = await self._client.send(request, stream=True)
         try:
             declared = response.headers.get("content-length")
