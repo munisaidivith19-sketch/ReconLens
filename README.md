@@ -117,6 +117,14 @@ Prerequisites:
 - Node.js 22 or later
 - MongoDB, either running locally or as an Atlas connection string
 
+**Quick start:** one command sets up whatever is missing and runs both servers:
+
+```bash
+python run.py            # http://localhost:5173 opens automatically; Ctrl+C stops everything
+```
+
+Or do it manually:
+
 ```bash
 git clone https://github.com/munisaidivith19-sketch/ReconLens.git
 cd ReconLens
