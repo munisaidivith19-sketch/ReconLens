@@ -162,3 +162,21 @@ async def test_history_paginated(client, auth_headers, public_dns, no_background
     assert len(r2.json()["items"]) == 1
     q = await client.get("/api/scans/quota", headers=auth_headers)
     assert q.json() == {"limit": 3, "used": 3, "remaining": 0}
+
+
+async def test_per_ip_scan_cap(client, auth_headers, public_dns, no_background, monkeypatch):
+    from app.core import rate_limit
+
+    monkeypatch.setattr(rate_limit.scan_ip_limiter, "max_requests", 2)
+    for i in range(2):
+        r = await client.post(
+            "/api/scans",
+            json={"target": f"ip{i}.example.com", "confirmed_authorized": True},
+            headers=auth_headers,
+        )
+        assert r.status_code == 201
+    r = await client.post(
+        "/api/scans", json={"target": "ip9.example.com", "confirmed_authorized": True}, headers=auth_headers
+    )
+    assert r.status_code == 429
+    assert r.json()["detail"]["code"] == "quota_exceeded"

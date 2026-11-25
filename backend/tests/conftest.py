@@ -39,6 +39,7 @@ async def client(fake_db, monkeypatch):
     monkeypatch.setattr(app_db, "close", _noop)
     rate_limit.login_limiter.reset()
     rate_limit.register_limiter.reset()
+    rate_limit.scan_ip_limiter.reset()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
         yield c

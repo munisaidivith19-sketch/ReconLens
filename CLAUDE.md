@@ -63,6 +63,7 @@ DEVELOPMENT NOTES
 - Backend: `cd backend && uv sync && uv run uvicorn app.main:app --reload`. Tests: `uv run pytest`. Lint: `uv run ruff check . && uv run ruff format --check .`
 - After changing dependencies run `uv export --no-hashes --no-dev --format requirements-txt -o requirements.txt`.
 - Frontend: `cd frontend && npm ci && npm run dev`. Build: `npm run build`.
-- All outbound HTTP (target sites AND third-party APIs) uses `SafeHttpClient` from `app/core/ssrf_guard.py`; TLS probes use `ssrf_guard.tls_handshake`. Never import httpx elsewhere for network calls.
+- All outbound HTTP (target sites AND third-party APIs) uses `SafeHttpClient` from `app/core/ssrf_guard.py`; TLS probes use `ssrf_guard.tls_handshake`. Never import httpx elsewhere for network calls. The one exception is the Groq SDK in `app/services/ai_report.py`, which only talks to the fixed Groq API host (never a user-supplied target).
+- Abuse controls: per-user daily quota (`DAILY_SCAN_LIMIT`), per-IP limits on login/register and on new scans (`app/core/rate_limit.py`), `MAX_CONCURRENT_SCANS` semaphore, and scope confirmation stored on every scan (including cached clones).
 - Tests never touch the network: patch `ssrf_guard._dns_lookup` (fixture `public_dns`) and mock HTTP with respx against the resolved IP.
 - Frontend styling: glassmorphism / liquid-glass tokens in `src/index.css`; use semantic tokens (`text-muted`, `bg-glass`, `.glass`, `.btn`), never raw colours in components.

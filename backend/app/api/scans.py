@@ -5,12 +5,18 @@ from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import Response
 
-from app.api.deps import CurrentUser, Database
+from app.api.deps import CurrentUser, Database, client_ip
 from app.core.cache import get_cached_scan_id
-from app.core.rate_limit import QuotaExceededError, consume_scan_quota, get_quota_status
+from app.core.rate_limit import (
+    QuotaExceededError,
+    RateLimitedError,
+    consume_scan_quota,
+    get_quota_status,
+    scan_ip_limiter,
+)
 from app.core.ssrf_guard import BlockedTargetError, validate_target
 from app.models.scan import ScanCreate, ScanDetail, ScanPage, ScanStatus, ScanSummary
 from app.services import scan_runner
@@ -65,7 +71,7 @@ async def _owned_scan(db: Any, scan_id: str, user: dict[str, Any]) -> dict[str, 
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_scan(body: ScanCreate, user: CurrentUser, db: Database) -> dict[str, Any]:
+async def create_scan(body: ScanCreate, request: Request, user: CurrentUser, db: Database) -> dict[str, Any]:
     if body.confirmed_authorized is not True:  # also enforced by the schema
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -133,6 +139,16 @@ async def create_scan(body: ScanCreate, user: CurrentUser, db: Database) -> dict
             doc["_id"] = res.inserted_id
             return {"scan": _summary(doc).model_dump(mode="json"), "cached": True, "quota_remaining": None}
 
+    try:
+        scan_ip_limiter.hit(client_ip(request))
+    except RateLimitedError:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "quota_exceeded",
+                "message": "Too many scans from your network today. Please try again tomorrow.",
+            },
+        ) from None
     try:
         remaining = await consume_scan_quota(db, user_id)
     except QuotaExceededError as exc:

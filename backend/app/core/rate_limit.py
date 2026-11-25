@@ -96,6 +96,8 @@ class SlidingWindowLimiter:
 # 10 login attempts and 5 registrations per IP per 15 minutes.
 login_limiter = SlidingWindowLimiter(max_requests=10, window_seconds=15 * 60)
 register_limiter = SlidingWindowLimiter(max_requests=5, window_seconds=15 * 60)
+# New (non-cached) scans per IP per 24 hours, so farming accounts can't multiply the per-user quota.
+scan_ip_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=24 * 3600)
 
 
 class AsyncRateLimiter:
