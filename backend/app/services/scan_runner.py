@@ -52,8 +52,14 @@ def reset_state() -> None:
 
 
 def post_stages() -> list[PostStage]:
-    """Stages that run after all scanners (risk score, AI report). Filled in by services."""
-    return []
+    """Stages that run after all scanners, in order."""
+    from app.services.ai_report import ai_report_stage
+    from app.services.risk_score import risk_stage
+
+    return [
+        ("risk_score", "Risk score", risk_stage),
+        ("ai_report", "AI report", ai_report_stage),
+    ]
 
 
 def initial_stages(scanners: Sequence[Scanner] | None = None) -> list[dict[str, Any]]:

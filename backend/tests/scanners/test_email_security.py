@@ -15,7 +15,9 @@ async def test_no_spf_no_dmarc_is_spoofable(ctx, fake_dns):
 async def test_enforced_dmarc_is_protected(ctx, fake_dns):
     fake_dns[("example.com", "TXT")] = ["v=spf1 include:_spf.google.com -all"]
     fake_dns[("_dmarc.example.com", "TXT")] = ["v=DMARC1; p=reject; rua=mailto:d@example.com"]
-    fake_dns[("google._domainkey.example.com", "TXT")] = ["v=DKIM1; k=rsa; p=MIIB..."]
+    fake_dns[("google._domainkey.example.com", "TXT")] = [
+        "v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIB"
+    ]
     fake_dns[("example.com", "MX")] = ["1 aspmx.l.google.com."]
     res = await EmailSecurityScanner().run(ctx)
     assert res.data["spoofable"] is False
@@ -52,3 +54,23 @@ def test_dmarc_pct():
     d = analyze_dmarc(["v=DMARC1; p=quarantine; pct=25; rua=mailto:x@example.com"])
     assert d["pct"] == 25
     assert any("25%" in i for i in d["issues"])
+
+
+async def test_empty_dkim_key_is_not_a_key(ctx, fake_dns):
+    fake_dns[("google._domainkey.example.com", "TXT")] = ["v=DKIM1; p="]
+    res = await EmailSecurityScanner().run(ctx)
+    assert res.data["dkim"]["selectors_found"] == []
+
+
+async def test_wildcard_dkim_not_reported_as_found(ctx, fake_dns, monkeypatch):
+    from app.scanners import base
+
+    async def wildcard(name, rdtype):
+        if name.endswith("._domainkey.example.com"):
+            return ["v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA"]
+        return []
+
+    monkeypatch.setattr(base, "dns_query", wildcard)
+    res = await EmailSecurityScanner().run(ctx)
+    assert res.data["dkim"]["wildcard"] is True
+    assert res.data["dkim"]["selectors_found"] == []

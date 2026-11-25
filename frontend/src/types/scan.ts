@@ -112,7 +112,7 @@ export interface SubdomainsResult {
 export interface EmailSecurityResult {
   spf: { record: string | null; all_qualifier: string | null; lookups?: number; issues: string[] }
   dmarc: { record: string | null; policy: string | null; pct: number | null; rua: string[]; issues: string[]; inherited_from?: string | null }
-  dkim: { selectors_found: string[]; selectors_checked: string[] }
+  dkim: { selectors_found: string[]; selectors_checked: string[]; wildcard?: boolean }
   mx: string[]
   spoofable: boolean
   verdict: string
@@ -162,7 +162,7 @@ export interface VirusTotalResult {
   message?: string
   stats?: Record<string, number>
   reputation?: number
-  categories?: Record<string, string>
+  categories?: { engine: string; category: string }[]
   permalink?: string
 }
 
@@ -213,7 +213,7 @@ export interface TlsResult {
   trusted?: boolean
   verify_error?: string | null
   chain?: { subject: string; issuer: string }[]
-  legacy_protocols?: Record<string, boolean | null>
+  legacy_protocols?: { tls1_0?: boolean | null; tls1_1?: boolean | null }
   message?: string
 }
 

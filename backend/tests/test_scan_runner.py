@@ -111,6 +111,13 @@ async def test_runner_isolates_failures_and_saves_progress(fake_db):
     assert doc["results"]["ok"]["dotted_key"] == {"_bad": True}  # Mongo-safe keys
     assert [f["severity"] for f in doc["findings"]] == ["critical", "low"]  # sorted
 
+    assert stages["risk_score"]["status"] == "done"
+    assert stages["ai_report"]["status"] == "done"
+    assert 0 < doc["risk_score"] <= 100
+    assert doc["score_factors"][0]["severity"] == "critical"
+    assert doc["ai_report"]["generated_by"] == "template"  # no GROQ_API_KEY in tests
+    assert any("Boom" in g for g in doc["ai_report"]["data_gaps"])
+
     cache = await fake_db.scan_cache.find_one({"domain": "example.com"})
     assert cache["scan_id"] == str(scan_id)
 

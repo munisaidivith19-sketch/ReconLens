@@ -2,6 +2,7 @@
 
 import asyncio
 import re
+import secrets
 
 from app.models.finding import Severity
 from app.scanners import base
@@ -29,6 +30,12 @@ DKIM_SELECTORS = (
     "fm1",
     "mailjet",
 )
+
+
+def is_dkim_key(record: str) -> bool:
+    """A usable DKIM public key: has a non-empty p= tag (empty p= means revoked)."""
+    pub = _tag(record, "p")
+    return bool(pub) and ("v=dkim1" in record.lower() or "k=" in record.lower() or len(pub) > 40)
 
 
 def _tag(record: str, tag: str) -> str | None:
@@ -117,12 +124,17 @@ class EmailSecurityScanner(Scanner):
 
         sem = asyncio.Semaphore(5)
 
-        async def check_selector(sel: str) -> str | None:
+        async def has_key(sel: str) -> bool:
             async with sem:
                 recs = await self._txt(f"{sel}._domainkey.{domain}")
-            return sel if any("p=" in r.lower() or "v=dkim1" in r.lower() for r in recs) else None
+            return any(is_dkim_key(r) for r in recs)
 
-        found = [s for s in await asyncio.gather(*(check_selector(s) for s in DKIM_SELECTORS)) if s]
+        # A wildcard *._domainkey record would make every selector look valid.
+        wildcard = await has_key(f"rl-{secrets.token_hex(6)}")
+        found: list[str] = []
+        if not wildcard:
+            hits = await asyncio.gather(*(has_key(s) for s in DKIM_SELECTORS))
+            found = [s for s, ok in zip(DKIM_SELECTORS, hits, strict=True) if ok]
 
         policy = dmarc["policy"]
         enforcing = policy in ("quarantine", "reject") and (dmarc["pct"] or 100) == 100
@@ -153,7 +165,11 @@ class EmailSecurityScanner(Scanner):
         data = {
             "spf": spf,
             "dmarc": dmarc,
-            "dkim": {"selectors_found": found, "selectors_checked": list(DKIM_SELECTORS)},
+            "dkim": {
+                "selectors_found": found,
+                "selectors_checked": list(DKIM_SELECTORS),
+                "wildcard": wildcard,
+            },
             "mx": sorted(mx)[:20],
             "spoofable": spoofable,
             "verdict": verdict,
@@ -227,7 +243,7 @@ class EmailSecurityScanner(Scanner):
                     recommendation="Move to p=quarantine, then p=reject, once reports show legitimate mail passes.",
                 )
             )
-        if mx and not found:
+        if mx and not found and not wildcard:
             f.append(
                 self.finding(
                     "no_dkim_found",
