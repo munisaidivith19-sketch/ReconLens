@@ -1,0 +1,66 @@
+# Keep the Render free-tier services awake.
+#
+# Render free web services sleep after 15 minutes without traffic, so we ping
+# every 14 minutes. Pings pause from 03:00 to 03:30 IST (21:30-22:00 UTC) every
+# day. Render's free plan gives 750 instance hours a month; one service awake
+# 24/7 uses up to 744, so the daily pause (about 15 hours a month) keeps a margin.
+#
+# GitHub cron always runs in UTC. IST = UTC + 5:30.
+#   03:00 IST = 21:30 UTC, 03:30 IST = 22:00 UTC.
+#
+# Change the URLs in the "env" section below if your Render URLs change.
+
+name: Keep alive
+
+on:
+  schedule:
+    # Every 14 minutes in every UTC hour except 21:00-21:59.
+    - cron: "*/14 0-20,22-23 * * *"
+    # 21:00-21:29 UTC (02:30-02:59 IST): last ping at 21:28 UTC = 02:58 IST.
+    - cron: "0,14,28 21 * * *"
+  workflow_dispatch: # lets you run it by hand from the Actions tab
+
+permissions: {}
+
+concurrency:
+  group: keep-alive
+  cancel-in-progress: true
+
+env:
+  API_URL: https://reconlens-api-3x9x.onrender.com/api/health
+  FRONTEND_URL: https://reconlens-5eh4.onrender.com/
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Skip during the 03:00-03:30 IST quiet window
+        id: window
+        run: |
+          # GitHub sometimes starts scheduled runs late, so check the real time too.
+          now=$(TZ=Asia/Kolkata date +%H%M)
+          echo "Current IST time: $now"
+          if [ "$now" -ge 0300 ] && [ "$now" -lt 0330 ]; then
+            echo "Inside quiet window, skipping."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Wake backend (API)
+        if: steps.window.outputs.skip == 'false'
+        run: |
+          # A cold start can take up to about a minute, so allow a long timeout and retries.
+          curl --fail --silent --show-error --location \
+            --max-time 90 --retry 3 --retry-delay 10 --retry-all-errors \
+            -o /dev/null -w "API: HTTP %{http_code} in %{time_total}s\n" \
+            "$API_URL"
+
+      - name: Wake frontend (static site)
+        if: steps.window.outputs.skip == 'false'
+        run: |
+          curl --fail --silent --show-error --location \
+            --max-time 60 --retry 3 --retry-delay 10 --retry-all-errors \
+            -o /dev/null -w "Frontend: HTTP %{http_code} in %{time_total}s\n" \
+            "$FRONTEND_URL"

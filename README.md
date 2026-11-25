@@ -2,6 +2,8 @@
 
 **Passive attack-surface analysis for bug bounty hunters and security teams.**
 
+**Live demo:** https://reconlens-5eh4.onrender.com (free tier, so the first request may take 30–60 seconds while the server wakes up)
+
 Enter a domain you're authorized to test. ReconLens gathers public signals, matches exposed software versions to known vulnerabilities, scores the risk from 0 to 100, and writes a prioritized analyst report. You watch every stage finish live and can export the result as JSON or PDF.
 
 > ReconLens is **passive only**. It never sends exploit payloads, brute-forces, port-scans, fuzzes parameters or requests the endpoints it discovers. It only fetches what a normal browser visit or a public data source would provide.
