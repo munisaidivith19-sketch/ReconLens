@@ -1,0 +1,45 @@
+[project]
+name = "reconlens-backend"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+    "cryptography>=50.0.2",
+    "dnspython>=2.9.2",
+    "email-validator>=2.4.0",
+    "fastapi>=0.165.0",
+    "groq>=1.7.0",
+    "httpx>=0.28.1",
+    "idna>=3.20",
+    "pwdlib[argon2]>=0.4.2",
+    "pydantic>=2.14.4",
+    "pydantic-settings>=2.16.3",
+    "pyjwt>=2.15.1",
+    "pymongo>=4.20.1",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.5.0",
+    "respx>=0.23.1",
+    "ruff>=0.17.6",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = ["app/data"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "ASYNC", "BLE", "RUF"]
+ignore = ["S101", "RUF001", "RUF002", "RUF003", "B008", "S311"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S104", "S105", "S106", "S107", "BLE001", "E501"]
