@@ -23,7 +23,8 @@ async def test_enforced_dmarc_is_protected(ctx, fake_dns):
     assert res.data["spoofable"] is False
     assert res.data["verdict_level"] == "protected"
     assert res.data["dkim"]["selectors_found"] == ["google"]
-    assert res.findings == []
+    # Spoofing is fully covered; only the transport-hardening advice remains.
+    assert {f.id for f in res.findings} == {"email_security.no_mta_sts", "email_security.no_tls_rpt"}
 
 
 async def test_dmarc_none_is_spoofable(ctx, fake_dns):

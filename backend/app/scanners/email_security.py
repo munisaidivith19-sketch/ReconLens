@@ -1,12 +1,20 @@
-"""Email spoofing protection: SPF, DMARC and DKIM (common selectors) via DNS."""
+"""Email security: SPF, DMARC and DKIM (common selectors), plus MTA-STS, TLS-RPT and BIMI.
+
+Everything is DNS, except the MTA-STS policy file, which is fetched from
+https://mta-sts.<domain>/.well-known/mta-sts.txt only when the _mta-sts record says one exists
+(the same request every sending mail server makes).
+"""
 
 import asyncio
 import re
 import secrets
 
+import httpx
+
+from app.core.ssrf_guard import BlockedTargetError, ResponseTooLargeError
 from app.models.finding import Severity
 from app.scanners import base
-from app.scanners.base import ScanContext, Scanner, ScannerResult
+from app.scanners.base import ScanContext, Scanner, ScannerResult, describe_error
 
 DKIM_SELECTORS = (
     "default",
@@ -41,6 +49,25 @@ def is_dkim_key(record: str) -> bool:
 def _tag(record: str, tag: str) -> str | None:
     m = re.search(rf"(?:^|;)\s*{tag}\s*=\s*([^;]+)", record, re.IGNORECASE)
     return m.group(1).strip() if m else None
+
+
+def parse_mta_sts_policy(text: str) -> dict:
+    """Parse the key: value lines of an MTA-STS policy file (RFC 8461)."""
+    policy: dict = {"version": None, "mode": None, "max_age": None, "mx": []}
+    for raw in text.splitlines()[:50]:
+        if ":" not in raw:
+            continue
+        key, value = (x.strip() for x in raw.split(":", 1))
+        key = key.lower()
+        if key == "version":
+            policy["version"] = value
+        elif key == "mode":
+            policy["mode"] = value.lower()
+        elif key == "max_age":
+            policy["max_age"] = int(value) if value.isdigit() else None
+        elif key == "mx" and len(policy["mx"]) < 10:
+            policy["mx"].append(value)
+    return policy
 
 
 def analyze_spf(records: list[str]) -> dict:
@@ -98,6 +125,49 @@ class EmailSecurityScanner(Scanner):
         except base.DnsLookupError:
             return []
 
+    async def _mta_sts(self, ctx: ScanContext, domain: str) -> dict:
+        record = next(
+            (r for r in await self._txt(f"_mta-sts.{domain}") if r.lower().startswith("v=stsv1")), None
+        )
+        info: dict = {"record": record, "policy": None, "policy_error": None}
+        if not record:
+            return info
+        url = f"https://mta-sts.{domain}/.well-known/mta-sts.txt"
+        try:
+            resp = await ctx.client.get(
+                url, headers={"Accept": "text/plain"}, max_bytes=64 * 1024, timeout=10.0
+            )
+        except (httpx.HTTPError, ResponseTooLargeError, BlockedTargetError, TimeoutError) as exc:
+            info["policy_error"] = describe_error(exc)
+            return info
+        if resp.status_code != 200:
+            info["policy_error"] = f"HTTP {resp.status_code}"
+            return info
+        policy = parse_mta_sts_policy(resp.text)
+        if policy["version"] != "STSv1" or not policy["mode"]:
+            info["policy_error"] = "policy file is not a valid STSv1 policy"
+            return info
+        info["policy"] = policy
+        return info
+
+    async def _hardening(self, ctx: ScanContext, domain: str) -> dict:
+        mta_sts, tls_rpt, bimi = await asyncio.gather(
+            self._mta_sts(ctx, domain),
+            self._txt(f"_smtp._tls.{domain}"),
+            self._txt(f"default._bimi.{domain}"),
+        )
+        tls_rpt_rec = next((r for r in tls_rpt if r.lower().startswith("v=tlsrptv1")), None)
+        bimi_rec = next((r for r in bimi if r.lower().startswith("v=bimi1")), None)
+        return {
+            "mta_sts": mta_sts,
+            "tls_rpt": {"record": tls_rpt_rec, "rua": _tag(tls_rpt_rec, "rua") if tls_rpt_rec else None},
+            "bimi": {
+                "record": bimi_rec,
+                "logo": _tag(bimi_rec, "l") if bimi_rec else None,
+                "certificate": _tag(bimi_rec, "a") if bimi_rec else None,
+            },
+        }
+
     async def run(self, ctx: ScanContext) -> ScannerResult:
         domain = ctx.domain
         try:
@@ -136,6 +206,8 @@ class EmailSecurityScanner(Scanner):
             hits = await asyncio.gather(*(has_key(s) for s in DKIM_SELECTORS))
             found = [s for s, ok in zip(DKIM_SELECTORS, hits, strict=True) if ok]
 
+        hardening = await self._hardening(ctx, domain) if mx else None
+
         policy = dmarc["policy"]
         enforcing = policy in ("quarantine", "reject") and (dmarc["pct"] or 100) == 100
         spf_strict = spf["all_qualifier"] in ("-", "~")
@@ -171,6 +243,7 @@ class EmailSecurityScanner(Scanner):
                 "wildcard": wildcard,
             },
             "mx": sorted(mx)[:20],
+            "hardening": hardening,
             "spoofable": spoofable,
             "verdict": verdict,
             "verdict_level": level,
@@ -255,4 +328,61 @@ class EmailSecurityScanner(Scanner):
                     ),
                 )
             )
+        if hardening:
+            self._hardening_findings(result, hardening, domain)
         return result
+
+    def _hardening_findings(self, result: ScannerResult, h: dict, domain: str) -> None:
+        sts = h["mta_sts"]
+        if not sts["record"]:
+            result.findings.append(
+                self.finding(
+                    "no_mta_sts",
+                    "No MTA-STS policy: inbound mail can be downgraded to plaintext",
+                    Severity.LOW,
+                    evidence=f"No v=STSv1 TXT record at _mta-sts.{domain}.",
+                    recommendation=(
+                        f"Publish an MTA-STS policy at https://mta-sts.{domain}/.well-known/mta-sts.txt and a "
+                        f"_mta-sts.{domain} TXT record, start in mode: testing, then switch to mode: enforce."
+                    ),
+                    references=["https://www.rfc-editor.org/rfc/rfc8461"],
+                )
+            )
+        elif sts["policy_error"]:
+            result.findings.append(
+                self.finding(
+                    "mta_sts_broken",
+                    "MTA-STS is announced but the policy file is unavailable",
+                    Severity.LOW,
+                    evidence=f"_mta-sts record: {sts['record']}. Policy: {sts['policy_error']}.",
+                    recommendation=(
+                        f"Serve a valid policy at https://mta-sts.{domain}/.well-known/mta-sts.txt over HTTPS with "
+                        "a trusted certificate, or remove the TXT record."
+                    ),
+                    references=["https://www.rfc-editor.org/rfc/rfc8461#section-3.2"],
+                )
+            )
+        elif sts["policy"] and sts["policy"]["mode"] != "enforce":
+            result.findings.append(
+                self.finding(
+                    "mta_sts_testing",
+                    f"MTA-STS is in {sts['policy']['mode']} mode",
+                    Severity.INFO,
+                    evidence=f"mode: {sts['policy']['mode']}",
+                    recommendation="Once TLS reports show no failures, switch the policy to mode: enforce.",
+                )
+            )
+        if not h["tls_rpt"]["record"]:
+            result.findings.append(
+                self.finding(
+                    "no_tls_rpt",
+                    "No TLS-RPT record for mail delivery reports",
+                    Severity.INFO,
+                    evidence=f"No v=TLSRPTv1 TXT record at _smtp._tls.{domain}.",
+                    recommendation=(
+                        f"Publish '_smtp._tls.{domain} TXT \"v=TLSRPTv1; rua=mailto:tls-reports@{domain}\"' to "
+                        "receive reports of failed TLS connections to your mail servers."
+                    ),
+                    references=["https://www.rfc-editor.org/rfc/rfc8460"],
+                )
+            )

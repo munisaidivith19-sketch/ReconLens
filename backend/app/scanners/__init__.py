@@ -7,6 +7,8 @@ from app.scanners.dns_records import DnsRecordsScanner
 from app.scanners.email_security import EmailSecurityScanner
 from app.scanners.endpoints import EndpointsScanner
 from app.scanners.exposed_services import ExposedServicesScanner
+from app.scanners.favicon import FaviconScanner
+from app.scanners.lookalikes import LookalikesScanner
 from app.scanners.origin_hints import OriginHintsScanner
 from app.scanners.robots_sitemap import RobotsSitemapScanner
 from app.scanners.security_headers import SecurityHeadersScanner
@@ -37,6 +39,8 @@ def get_scanners() -> list[Scanner]:
         EndpointsScanner(),
         ClientSideScanner(),
         OriginHintsScanner(),  # depends on dns_records, takeover, security_headers
+        FaviconScanner(),
+        LookalikesScanner(),  # depends on whois_rdap
     ]
 
 

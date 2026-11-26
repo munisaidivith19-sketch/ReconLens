@@ -27,12 +27,12 @@ export function SummaryPanel({ scan }: { scan: ScanDetail }) {
   const surface: [string, number][] = [
     ['subdomains', r.subdomains?.count ?? 0],
     ['archived URLs', r.endpoints?.wayback?.total_urls ?? 0],
-    ['forms', r.endpoints?.forms?.length ?? 0],
     ['technologies', r.tech_stack?.count ?? 0],
     ['CVEs', r.cve_lookup?.cves?.length ?? 0],
     ['open ports (Shodan)', ports],
     ['API routes in JS', r.client_side?.endpoints?.length ?? 0],
-    ['CNAMEs', r.takeover?.cnames?.length ?? 0],
+    ['JS libraries', r.client_side?.libraries?.length ?? 0],
+    ['lookalike domains', r.lookalikes?.registered_count ?? r.lookalikes?.registered?.length ?? 0],
   ]
 
   return (

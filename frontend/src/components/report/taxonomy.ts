@@ -14,6 +14,7 @@ const OWASP = {
   A05: 'Security Misconfiguration',
   A06: 'Vulnerable and Outdated Components',
   A07: 'Identification and Authentication Failures',
+  A08: 'Software and Data Integrity Failures',
 } as const
 
 type OwaspId = keyof typeof OWASP
@@ -54,10 +55,14 @@ const RULES: [RegExp, Taxonomy][] = [
   [/^tls_check\.weak_signature$/, t([328, 'Use of Weak Hash'], 'A02')],
   [/^email_security\.(no_dmarc|dmarc_none)$/, t(SPOOFING, 'A05', 'Publish a DMARC record, then move to p=quarantine.')],
   [/^email_security\.(no_spf|spf_plus_all|spf_issues)$/, t(SPOOFING, 'A05', 'Fix the SPF record and end it with -all or ~all.')],
+  [/^email_security\.(no_mta_sts|mta_sts_broken|mta_sts_testing)$/, t(CLEARTEXT, 'A02')],
+  [/^email_security\.no_tls_rpt$/, t(null, null, 'Publish a _smtp._tls TLS-RPT record.')],
   [/^email_security\./, t(SPOOFING, 'A05')],
   [/^cve_lookup\./, t(VULN_COMPONENT, 'A06')],
   [/^tech_stack\./, t(EXPOSURE, 'A05')],
   [/^takeover\./, t(ACCESS, 'A05')],
+  [/^client_side\.vulnerable_lib\./, t(VULN_COMPONENT, 'A06')],
+  [/^client_side\.no_sri$/, t([353, 'Missing Support for Integrity Check'], 'A08', 'Add integrity and crossorigin attributes to versioned CDN files.')],
   [/^client_side\.secret\./, t([798, 'Use of Hard-coded Credentials'], 'A07')],
   [/^client_side\.source_maps$/, t([540, 'Inclusion of Sensitive Information in Source Code'], 'A05', 'Stop deploying .map files to production.')],
   [/^client_side\./, t(EXPOSURE, 'A05')],

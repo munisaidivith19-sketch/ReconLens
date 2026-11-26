@@ -1,6 +1,6 @@
 import { MailCheck, MailWarning, MailX } from 'lucide-react'
 
-import type { EmailSecurityResult } from '../../types/scan'
+import type { EmailHardening, EmailSecurityResult } from '../../types/scan'
 import { Badge } from '../ui/Badge'
 import { Card, CardHeader } from '../ui/Card'
 import { cn } from '../ui/cn'
@@ -12,12 +12,22 @@ const VERDICT = {
   spoofable: { tone: 'danger' as const, icon: MailX, label: 'Spoofable', cls: 'text-danger' },
 }
 
-function Row({ label, ok, record, issues }: { label: string; ok: boolean; record: string | null; issues: string[] }) {
+interface RowProps {
+  label: string
+  ok: boolean
+  record: string | null
+  issues: string[]
+  /** Missing is not a weakness (shown neutral instead of red). */
+  optional?: boolean
+}
+
+function Row({ label, ok, record, issues, optional }: RowProps) {
+  const tone = ok ? 'ok' : record ? 'warn' : optional ? 'neutral' : 'danger'
   return (
     <div className="min-w-0 rounded-2xl border border-glass-border bg-glass p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="font-semibold">{label}</span>
-        <Badge tone={ok ? 'ok' : record ? 'warn' : 'danger'}>{ok ? 'OK' : record ? 'Weak' : 'Missing'}</Badge>
+        <Badge tone={tone}>{ok ? 'OK' : record ? 'Weak' : optional ? 'Not set' : 'Missing'}</Badge>
       </div>
       {record && (
         <p className="mt-2 rounded-xl bg-glass-strong px-3 py-2 font-mono text-xs text-muted [overflow-wrap:anywhere]">{record}</p>
@@ -79,6 +89,46 @@ export function EmailSecurityPanel({ data }: { data?: EmailSecurityResult }) {
           }
         />
       </div>
+      {data.hardening && <Hardening h={data.hardening} />}
     </Card>
+  )
+}
+
+function Hardening({ h }: { h: EmailHardening }) {
+  const sts = h.mta_sts
+  const mode = sts.policy?.mode
+  return (
+    <section aria-label="Mail transport security" className="mt-5">
+      <h3 className="mb-2 text-sm font-semibold text-muted">Mail transport security</h3>
+      <div className="grid gap-3 lg:grid-cols-3">
+        <Row
+          label="MTA-STS"
+          ok={mode === 'enforce'}
+          record={sts.policy ? `mode: ${mode}${sts.policy.mx.length ? ` · mx: ${sts.policy.mx.join(', ')}` : ''}` : sts.record}
+          issues={
+            !sts.record
+              ? ['Sending servers may deliver mail to you without TLS, or to a forged MX']
+              : sts.policy_error
+                ? [`Policy file unavailable: ${sts.policy_error}`]
+                : mode !== 'enforce'
+                  ? ['Policy is not enforced yet']
+                  : []
+          }
+        />
+        <Row
+          label="TLS-RPT"
+          ok={Boolean(h.tls_rpt.record)}
+          record={h.tls_rpt.record}
+          issues={h.tls_rpt.record ? [] : ['No reports of failed TLS delivery to your mail servers']}
+        />
+        <Row
+          label="BIMI"
+          ok={Boolean(h.bimi.record)}
+          optional
+          record={h.bimi.record}
+          issues={h.bimi.record ? [] : ['Optional: shows your verified logo in supporting inboxes']}
+        />
+      </div>
+    </section>
   )
 }

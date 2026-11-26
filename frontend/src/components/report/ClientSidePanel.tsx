@@ -39,18 +39,24 @@ function ListBlock({ title, items }: { title: string; items: string[] }) {
 export function ClientSidePanel({ data }: { data?: ClientSideResult }) {
   const secrets = data?.secrets ?? []
   const buckets = data?.buckets ?? []
+  const libraries = data?.libraries ?? []
+  const vulnerableLibs = libraries.filter((l) => l.vulnerabilities.length > 0).length
+  const sri = data?.sri
   return (
     <Card aria-labelledby="clientside-title" className="flex flex-col">
       <CardHeader
         id="clientside-title"
         title="JavaScript analysis"
         icon={<FileCode2 size={20} />}
-        description="Secrets, cloud buckets and API routes in the homepage and the same-site scripts it loads. Nothing found here is requested."
+        description="Secrets, vulnerable libraries, cloud buckets and API routes in the homepage and the same-site scripts it loads. Nothing found here is requested."
         action={
           data?.status === 'ok' ? (
-            <Badge tone={secrets.length ? 'danger' : 'ok'}>
-              {secrets.length ? `${secrets.length} secret type(s)` : 'no secrets'}
-            </Badge>
+            <span className="flex flex-wrap gap-1.5">
+              <Badge tone={secrets.length ? 'danger' : 'ok'}>
+                {secrets.length ? `${secrets.length} secret type(s)` : 'no secrets'}
+              </Badge>
+              {vulnerableLibs > 0 && <Badge tone="danger">{vulnerableLibs} vulnerable lib(s)</Badge>}
+            </span>
           ) : undefined
         }
       />
@@ -86,6 +92,70 @@ export function ClientSidePanel({ data }: { data?: ClientSideResult }) {
             </section>
           )}
 
+          {libraries.length > 0 && (
+            <section aria-label="JavaScript libraries">
+              <h3 className="mb-2 text-sm font-semibold text-muted">Libraries ({libraries.length})</h3>
+              <ul className="flex flex-col gap-1.5">
+                {libraries.map((lib) => (
+                  <li
+                    key={`${lib.component}@${lib.version}`}
+                    className="grid min-w-0 gap-2 rounded-xl bg-glass px-3 py-2 sm:grid-cols-[minmax(0,1fr)_6rem] sm:items-center"
+                  >
+                    <span className="min-w-0">
+                      <span className="block text-sm font-semibold [overflow-wrap:anywhere]">
+                        {lib.component} <span className="font-mono font-normal text-muted">{lib.version}</span>
+                      </span>
+                      {lib.vulnerabilities.length > 0 ? (
+                        <span className="block text-xs text-muted [overflow-wrap:anywhere]">
+                          {lib.vulnerabilities.length} known issue(s)
+                          {lib.vulnerabilities.flatMap((v) => v.cves).length > 0 &&
+                            `: ${[...new Set(lib.vulnerabilities.flatMap((v) => v.cves))].slice(0, 4).join(', ')}`}
+                        </span>
+                      ) : (
+                        <span className="block text-xs text-faint">No known vulnerabilities · via {lib.detected_by}</span>
+                      )}
+                    </span>
+                    <span className="sm:justify-self-end">
+                      {lib.severity ? (
+                        <SeverityBadge severity={lib.severity} className="w-24 justify-center" />
+                      ) : (
+                        <Badge tone="ok" className="w-24 justify-center">
+                          up to date
+                        </Badge>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
+          {sri && sri.missing.length > 0 && (
+            <section aria-label="Subresource Integrity">
+              <h3 className="mb-2 text-sm font-semibold text-muted">
+                Third-party files without integrity check ({sri.missing.length} of {sri.external_total})
+              </h3>
+              <ul className="flex flex-col gap-1.5">
+                {sri.missing.slice(0, 12).map((m) => (
+                  <li
+                    key={m.url}
+                    className="grid min-w-0 gap-1 rounded-xl bg-glass px-3 py-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                  >
+                    <span className="font-mono text-xs [overflow-wrap:anywhere]">{m.url}</span>
+                    <span className="flex gap-1.5 sm:justify-self-end">
+                      <Badge>{m.kind}</Badge>
+                      {m.dynamic ? (
+                        <Badge title="This provider changes the file in place, so SRI cannot be used">dynamic</Badge>
+                      ) : (
+                        <Badge tone="warn">no SRI</Badge>
+                      )}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {buckets.length > 0 && (
             <section aria-label="Cloud storage">
               <h3 className="mb-2 text-sm font-semibold text-muted">Cloud storage referenced</h3>
@@ -112,9 +182,12 @@ export function ClientSidePanel({ data }: { data?: ClientSideResult }) {
             <ListBlock title="Source maps referenced" items={(data.source_maps ?? []).map((s) => s.url)} />
           </div>
 
-          {secrets.length === 0 && buckets.length === 0 && (data.endpoints ?? []).length === 0 && (
-            <Empty>No secrets, buckets or API routes found in client-side code.</Empty>
-          )}
+          {secrets.length === 0 &&
+            buckets.length === 0 &&
+            libraries.length === 0 &&
+            (data.endpoints ?? []).length === 0 && (
+              <Empty>No secrets, libraries, buckets or API routes found in client-side code.</Empty>
+            )}
 
           <p className="mt-auto text-xs text-faint">
             Read {(data.scripts ?? []).filter((s) => s.status === 200).length} of {data.scripts_found ?? 0} same-site

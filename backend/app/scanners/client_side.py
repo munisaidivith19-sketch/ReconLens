@@ -5,13 +5,18 @@ itself loads, exactly what a browser downloads on a normal visit. Nothing discov
 requested: buckets, endpoints and source maps are only listed for the user to review.
 
 Secrets are masked before they are stored; the full value never leaves this module.
+
+Also reports vulnerable JavaScript libraries (Retire.js data, matched on URLs and contents) and
+third-party scripts or stylesheets loaded without Subresource Integrity.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import re
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -20,12 +25,42 @@ from app.core.ssrf_guard import BlockedTargetError, ResponseTooLargeError
 from app.models.finding import Severity
 from app.scanners.base import HomepageUnavailableError, ScanContext, Scanner, ScannerResult, describe_error
 from app.scanners.tech_stack import parse_page
+from app.services import retire
 
 MAX_SCRIPTS = 10
 SCRIPT_MAX_BYTES = 2 * 1024 * 1024
 PARALLEL = 3
 MAX_ENDPOINTS = 150
 MAX_HOSTS = 100
+MAX_SRI_ITEMS = 40
+# Providers that change their script in place, so an integrity hash cannot be pinned.
+DYNAMIC_SCRIPT_HOSTS = (
+    "googletagmanager.com",
+    "google-analytics.com",
+    "google.com",
+    "gstatic.com",
+    "googleapis.com",
+    "googlesyndication.com",
+    "doubleclick.net",
+    "js.stripe.com",
+    "connect.facebook.net",
+    "static.hotjar.com",
+    "snap.licdn.com",
+    "platform.twitter.com",
+    "cdn.segment.com",
+    "js.hs-scripts.com",
+    "js.hsforms.net",
+    "widget.intercom.io",
+    "challenges.cloudflare.com",
+    "static.cloudflareinsights.com",
+    "js.hcaptcha.com",
+    "youtube.com",
+    "player.vimeo.com",
+    "clarity.ms",
+    "cdn.onesignal.com",
+    "embed.tawk.to",
+    "checkout.razorpay.com",
+)
 
 
 @dataclass(frozen=True)
@@ -171,6 +206,10 @@ SOURCEMAP_RX = _rx(r"(?://|/\*)[#@]\s*sourceMappingURL=([^\s*'\"]+)")
 NOISE_HOSTS = ("w3.org", "schema.org", "reactjs.org", "react.dev", "mozilla.org", "github.com", "npmjs.com")
 
 
+def _version_key(v: str) -> tuple:
+    return tuple(int(p) if p.isdigit() else 0 for p in re.split(r"[.\-]", v))
+
+
 def mask(value: str) -> str:
     if len(value) <= 12:
         return value[:2] + "…"
@@ -217,9 +256,68 @@ def analyse(text: str, source: str, domain: str, acc: dict) -> None:
             acc["source_maps"][urljoin(source, ref)] = source
 
 
+class _ResourceParser(HTMLParser):
+    """Collect <script src> and stylesheet <link href> with their integrity attribute."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.items: list[tuple[str, str, bool]] = []  # (kind, url, has_integrity)
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if len(self.items) >= 300:
+            return
+        a = {k.lower(): (v or "") for k, v in attrs}
+        if tag == "script" and a.get("src"):
+            self.items.append(("script", a["src"][:500], bool(a.get("integrity"))))
+        elif tag == "link" and "stylesheet" in a.get("rel", "").lower() and a.get("href"):
+            self.items.append(("stylesheet", a["href"][:500], bool(a.get("integrity"))))
+
+
+def _host_in(host: str, suffixes: tuple[str, ...]) -> bool:
+    return any(host == s or host.endswith("." + s) for s in suffixes)
+
+
+def sri_report(html: str, page_url: str, domain: str) -> dict:
+    parser = _ResourceParser()
+    with contextlib.suppress(Exception):  # malformed HTML: keep what was parsed
+        parser.feed(html)
+    external, protected = [], 0
+    for kind, src, has_integrity in parser.items:
+        url = urljoin(page_url, src)
+        host = (urlsplit(url).hostname or "").lower()
+        if not host or _same_site(host, domain):
+            continue
+        if has_integrity:
+            protected += 1
+            continue
+        external.append({"url": url, "kind": kind, "dynamic": _host_in(host, DYNAMIC_SCRIPT_HOSTS)})
+    return {
+        "external_total": len(external) + protected,
+        "with_integrity": protected,
+        "missing": external[:MAX_SRI_ITEMS],
+        "missing_pinnable": sum(1 for e in external if not e["dynamic"]),
+    }
+
+
+def _add_library(libs: dict, name: str, version: str, source: str, how: str) -> None:
+    key = (name, version)
+    if key in libs:
+        return
+    comp = retire.component(name)
+    vulns = retire.vulnerabilities_for(comp, version) if comp else []
+    libs[key] = {
+        "component": name,
+        "version": version,
+        "source": source,
+        "detected_by": how,
+        "vulnerabilities": vulns,
+        "severity": retire.max_severity(vulns) if vulns else None,
+    }
+
+
 class ClientSideScanner(Scanner):
     name = "client_side"
-    label = "JavaScript secrets, buckets & endpoints"
+    label = "JavaScript secrets, libraries & endpoints"
     category = "Client-side code"
     timeout = 60.0
 
@@ -240,6 +338,10 @@ class ClientSideScanner(Scanner):
             "source_maps": {},
         }
         analyse(html, page.url, ctx.domain, acc)
+        sri = sri_report(html, page.url, ctx.domain)
+        libs: dict = {}
+        for name, version in await asyncio.to_thread(retire.detect_content, html):
+            _add_library(libs, name, version, page.url, "inline code")
 
         scripts: list[str] = []
         external = 0
@@ -248,6 +350,9 @@ class ClientSideScanner(Scanner):
             parts = urlsplit(url)
             if parts.scheme not in ("http", "https") or not parts.hostname:
                 continue
+            # Library versions in script URLs (also for third-party CDNs, which are not fetched).
+            for name, version in retire.detect_url(url):
+                _add_library(libs, name, version, url, "script URL")
             if not _same_site(parts.hostname, ctx.domain):
                 external += 1
                 continue
@@ -277,7 +382,10 @@ class ClientSideScanner(Scanner):
                 }
                 fetched.append(entry)
                 if resp.status_code == 200:
-                    analyse(resp.text, url, ctx.domain, acc)
+                    text = resp.text
+                    analyse(text, url, ctx.domain, acc)
+                    for name, version in await asyncio.to_thread(retire.detect_content, text):
+                        _add_library(libs, name, version, url, "file content")
                     if resp.headers.get("sourcemap") or resp.headers.get("x-sourcemap"):
                         ref = resp.headers.get("sourcemap") or resp.headers.get("x-sourcemap")
                         acc["source_maps"].setdefault(urljoin(url, ref), url)
@@ -301,13 +409,68 @@ class ClientSideScanner(Scanner):
             "secrets": secrets,
             "buckets": list(acc["buckets"].values()),
             "endpoints": [{"path": p, "source": s} for p, s in sorted(acc["endpoints"].items())],
+            "libraries": sorted(
+                libs.values(), key=lambda lib: (not lib["vulnerabilities"], lib["component"])
+            ),
+            "sri": sri,
             "in_scope_hosts": sorted(acc["in_scope_hosts"] - {ctx.domain}),
             "third_party_hosts": sorted(acc["third_party_hosts"]),
             "source_maps": [{"url": u, "source": s} for u, s in acc["source_maps"].items()],
         }
         result = ScannerResult(data=data)
         self._findings(result, acc)
+        self._library_findings(result, list(libs.values()))
+        self._sri_finding(result, sri)
         return result
+
+    def _library_findings(self, result: ScannerResult, libs: list[dict]) -> None:
+        for lib in libs:
+            vulns = lib["vulnerabilities"]
+            if not vulns:
+                continue
+            cves = sorted({c for v in vulns for c in v["cves"]})
+            summaries = "; ".join(v["summary"] for v in vulns[:3] if v["summary"])
+            fixed_in = max((v["below"] for v in vulns if v["below"]), key=_version_key, default=None)
+            result.findings.append(
+                self.finding(
+                    f"vulnerable_lib.{lib['component']}",
+                    f"{lib['component']} {lib['version']} has {len(vulns)} known vulnerabilit"
+                    + ("y" if len(vulns) == 1 else "ies"),
+                    Severity(lib["severity"]),
+                    evidence=(
+                        f"Detected from {lib['detected_by']}: {lib['source']}. "
+                        + (f"CVEs: {', '.join(cves[:8])}. " if cves else "")
+                        + summaries
+                    ),
+                    recommendation=(
+                        f"Upgrade {lib['component']} to {fixed_in} or later"
+                        if fixed_in
+                        else f"Upgrade {lib['component']}"
+                    )
+                    + ", then confirm the old file is no longer served.",
+                    references=[i for v in vulns[:2] for i in v["info"][:1]]
+                    + ["https://retirejs.github.io/retire.js/"],
+                    category="Vulnerable components",
+                )
+            )
+
+    def _sri_finding(self, result: ScannerResult, sri: dict) -> None:
+        pinnable = [m for m in sri["missing"] if not m["dynamic"]]
+        if not pinnable:
+            return
+        result.findings.append(
+            self.finding(
+                "no_sri",
+                f"{sri['missing_pinnable']} third-party file(s) loaded without Subresource Integrity",
+                Severity.LOW,
+                evidence=", ".join(m["url"] for m in pinnable[:6]),
+                recommendation=(
+                    'Add integrity="sha384-..." and crossorigin="anonymous" to versioned third-party '
+                    "<script> and stylesheet tags, so a compromised CDN cannot change the code your visitors run."
+                ),
+                references=["https://developer.mozilla.org/en-US/docs/Web/Security/Subresource_Integrity"],
+            )
+        )
 
     def _findings(self, result: ScannerResult, acc: dict) -> None:
         for key, b in acc["secrets"].items():

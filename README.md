@@ -45,13 +45,13 @@ Enter a domain you're authorized to test. ReconLens maps its public attack surfa
 <td width="33%" valign="top">
 
 ### 🔭 Discover
-Subdomains from certificate transparency, 20+ DNS record types, takeover-prone CNAMEs, servers outside the CDN, open ports already indexed by Shodan, archived URLs and API routes in JavaScript.
+Subdomains from certificate transparency, 20 DNS record types, takeover-prone CNAMEs, servers outside the CDN, favicon pivots, open ports already indexed by Shodan, lookalike domains, archived URLs and API routes in JavaScript.
 
 </td>
 <td width="33%" valign="top">
 
 ### 🎯 Prioritise
-CVEs for detected **versions**, flagged when CISA lists them as exploited and scored by FIRST EPSS. A 0–100 risk score, the top 10 risk factors, the three issues to fix first and the quick wins.
+CVEs for detected **versions** and vulnerable JavaScript libraries, flagged when CISA lists them as exploited and scored by FIRST EPSS. A 0–100 risk score, the top 10 risk factors, the three issues to fix first and the quick wins.
 
 </td>
 <td width="33%" valign="top">
@@ -77,13 +77,14 @@ Expand a group to see each check, where its data comes from, and what you learn.
 | **Subdomains** | crt.sh certificate transparency | Every name on a certificate, including ones that only appear on expired certificates, with the interesting ones flagged (dev, staging, admin…) |
 | **Subdomain takeover** | Public DNS | CNAMEs whose target no longer exists (NXDOMAIN), matched against 32 cloud services where the name can be claimed |
 | **CDN bypass / origin hints** | DNS answers already collected | Subdomains that resolve outside the CDN or WAF in front of the main site, and a shared-hosting map |
+| **Favicon fingerprint** | The site's favicon (one request) | Shodan's favicon hash, with ready-made Shodan, FOFA and ZoomEye searches to find related hosts and origin servers |
 | **Exposed services** | Shodan InternetDB | Open ports, software and CVEs that Shodan's own scans saw on the domain's IPs. ReconLens never scans ports. |
 | **Registration** | RDAP | Registrar, creation and expiry dates, transfer lock |
 
 </details>
 
 <details>
-<summary><b>🔐 Web, TLS & email</b>: headers, cookies, certificates, spoofing</summary>
+<summary><b>🔐 Web, TLS & email</b>: headers, cookies, certificates, spoofing, lookalikes</summary>
 <br>
 
 | Check | Source | What you learn |
@@ -92,6 +93,8 @@ Expand a group to see each check, where its data comes from, and what you learn.
 | **HTTP security** | One homepage GET | Security headers (HSTS, CSP, framing, nosniff, Referrer and Permissions policies), cookie flags, HTTPS redirect, WAF/CDN |
 | **Email security** | Public DNS | SPF, DMARC and common DKIM selectors, with a plain-language verdict on whether the domain can be spoofed in phishing emails |
 | **security.txt** | `/.well-known/security.txt` | Disclosure contact, policy, expiry, and hints of a bug bounty programme (RFC 9116) |
+| **Mail transport security** | Public DNS + MTA-STS policy file | MTA-STS (mode and policy), TLS-RPT and BIMI, so mail can't be silently downgraded to plaintext |
+| **Lookalike domains** | Public DNS | Registered typosquats of the domain (other TLDs, look-alike characters, keyboard typos, phishing words), flagging the ones with mail servers. DNS only; never visited |
 | **Reputation** | VirusTotal v3 | Engine detections, categories, reputation score |
 
 </details>
@@ -106,6 +109,7 @@ Expand a group to see each check, where its data comes from, and what you learn.
 | **CVEs** | NVD API 2.0 | CVEs for detected **versions** only, never guessed from a product name |
 | **Actively exploited** | CISA KEV | Which of those CVEs attackers are exploiting in the wild |
 | **Exploit probability** | FIRST EPSS | How likely each CVE is to be exploited in the next 30 days |
+| **Vulnerable JS libraries** | Retire.js data + script URLs and contents | Outdated jQuery, Bootstrap, Angular, Swiper and 70+ other libraries with known CVEs, and the version that fixes them |
 
 </details>
 
@@ -115,7 +119,7 @@ Expand a group to see each check, where its data comes from, and what you learn.
 
 | Check | Source | What you learn |
 |---|---|---|
-| **JavaScript analysis** | Homepage + up to 10 same-site scripts it loads | Hard-coded secrets (AWS, Stripe, GitHub, Slack, SendGrid, private keys, JWTs…), masked before they are stored; cloud buckets (S3, Azure, GCS, Firebase, Spaces, R2); API routes; in-scope hosts; source maps |
+| **JavaScript analysis** | Homepage + up to 10 same-site scripts it loads | Third-party files loaded without Subresource Integrity; hard-coded secrets (AWS, Stripe, GitHub, Slack, SendGrid, private keys, JWTs…), masked before they are stored; cloud buckets (S3, Azure, GCS, Firebase, Spaces, R2); API routes; in-scope hosts; source maps |
 | **Endpoints** | Homepage forms + Wayback Machine CDX | Form actions and methods, archived paths, sensitive files (`.env`, `.git`, backups), and GET parameters grouped by likely bug class: redirect, file, IDOR, injection, XSS, command, debug, auth |
 | **robots.txt / sitemap** | The site itself | Disallowed paths worth reviewing, sitemap size |
 
@@ -144,7 +148,7 @@ sequenceDiagram
     participant W as Web app
     participant A as API
     participant G as SSRF guard
-    participant S as 16 scanners
+    participant S as 18 scanners
     participant D as Public sources
 
     U->>W: Enter domain + confirm authorization
@@ -178,7 +182,7 @@ flowchart LR
     subgraph API["FastAPI · Render web service"]
         direction TB
         R["Auth · quotas · rate limits<br/>scans · share links"] --> RUN["scan_runner<br/>asyncio · max 2 concurrent"]
-        RUN --> SC["16 scanners"]
+        RUN --> SC["18 scanners"]
         RUN --> RS["risk_score"]
         RUN --> AI["ai_report"]
         SC --> GUARD{{"SSRF guard<br/>SafeHttpClient"}}
@@ -387,6 +391,7 @@ ReconLens deliberately does **not** do active scanning: no port scans, directory
 | [Internet Archive Wayback Machine](https://web.archive.org) | Archived URLs (CDX API) | Internet Archive terms of use |
 | [Shodan InternetDB](https://internetdb.shodan.io) | Open ports, CPEs and CVEs per IP | Free, no key; non-commercial use |
 | [enthec/webappanalyzer](https://github.com/enthec/webappanalyzer) | Technology fingerprints (`backend/app/data/fingerprints`) | **GPL-3.0**: see the `LICENSE` and `NOTICE.md` in that directory |
+| [Retire.js](https://github.com/RetireJS/retire.js) | Vulnerable JavaScript library data (`backend/app/data/retirejs`) | **Apache-2.0**: see the `LICENSE.md` and `NOTICE.md` in that directory |
 | [can-i-take-over-xyz](https://github.com/EdOverflow/can-i-take-over-xyz) | Reference links for takeover-prone services | Linked, not copied |
 | [Groq](https://groq.com) | AI report generation | Groq API terms |
 
@@ -400,7 +405,7 @@ ReconLens's own code is MIT-licensed (see [`LICENSE`](LICENSE)). The bundled fin
 - [x] Subdomain takeover, origin hints, Shodan InternetDB, security.txt
 - [x] JavaScript secrets, buckets and endpoints; parameter classification
 - [x] Scan comparison, share links, CWE/OWASP labels, CSV/Markdown export
-- [ ] **Vulnerable JS libraries:** match the script versions already collected against Retire.js data
+- [x] Vulnerable JS libraries, SRI, favicon hash, lookalike domains, MTA-STS / TLS-RPT / BIMI
 - [ ] **Local active mode:** self-hosted only, never on the public demo. Nmap service detection and Nuclei templates, gated behind explicit scope files.
 - [ ] Scheduled re-scans and webhook alerts (needs a background worker, so not on the free tier)
 

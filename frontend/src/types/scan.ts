@@ -134,6 +134,61 @@ export interface ClientSecret {
   matches: { value: string; source: string }[]
 }
 
+export interface LibraryVuln {
+  below: string | null
+  at_or_above: string | null
+  severity: Severity
+  cves: string[]
+  summary: string
+  ghsa?: string | null
+  info: string[]
+}
+
+export interface JsLibrary {
+  component: string
+  version: string
+  source: string
+  detected_by: string
+  vulnerabilities: LibraryVuln[]
+  severity: Severity | null
+}
+
+export interface SriReport {
+  external_total: number
+  with_integrity: number
+  missing: { url: string; kind: 'script' | 'stylesheet'; dynamic: boolean }[]
+  missing_pinnable: number
+}
+
+export interface FaviconResult {
+  found: boolean
+  message?: string
+  url?: string
+  bytes?: number
+  content_type?: string | null
+  mmh3?: number
+  md5?: string
+  sha256?: string
+  searches?: { engine: string; query: string; url: string }[]
+}
+
+export interface Lookalike {
+  domain: string
+  technique: string
+  ips: string[]
+  mx: string[]
+}
+
+export interface LookalikesResult {
+  base: string
+  generated: number
+  checked: number
+  timed_out?: boolean
+  registered: Lookalike[]
+  registered_count?: number
+  with_mail?: number
+}
+
 export interface ClientSideResult {
   status: 'ok' | 'unavailable'
   message?: string
@@ -146,6 +201,8 @@ export interface ClientSideResult {
   in_scope_hosts?: string[]
   third_party_hosts?: string[]
   source_maps?: { url: string; source: string }[]
+  libraries?: JsLibrary[]
+  sri?: SriReport
 }
 
 export interface OriginCandidate {
@@ -227,6 +284,18 @@ export interface EmailSecurityResult {
   spoofable: boolean
   verdict: string
   verdict_level: 'protected' | 'partial' | 'spoofable'
+  /** Only present when the domain has MX records. */
+  hardening?: EmailHardening | null
+}
+
+export interface EmailHardening {
+  mta_sts: {
+    record: string | null
+    policy: { version: string | null; mode: string | null; max_age: number | null; mx: string[] } | null
+    policy_error: string | null
+  }
+  tls_rpt: { record: string | null; rua: string | null }
+  bimi: { record: string | null; logo: string | null; certificate: string | null }
 }
 
 export interface Technology {
@@ -353,6 +422,8 @@ export interface ScanResults {
   exposed_services?: ExposedServicesResult
   client_side?: ClientSideResult
   origin_hints?: OriginHintsResult
+  favicon?: FaviconResult
+  lookalikes?: LookalikesResult
   [key: string]: unknown
 }
 

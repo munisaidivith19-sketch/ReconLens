@@ -15,7 +15,7 @@ from app import db
 from app.api import auth, health, scans, shared
 from app.config import get_settings
 from app.scanners.tech_stack import load_fingerprints, warm_up
-from app.services import scan_runner
+from app.services import retire, scan_runner
 
 MAX_BODY_BYTES = 16 * 1024
 
@@ -33,6 +33,7 @@ async def lifespan(_app: FastAPI):
     logging.getLogger("httpx").setLevel(logging.WARNING)
     # Load fingerprint data once (kept in memory for every scan).
     await asyncio.to_thread(load_fingerprints)
+    await asyncio.to_thread(retire.load)  # Retire.js data for vulnerable JS libraries
     warm_task = asyncio.create_task(asyncio.to_thread(warm_up))
     await db.connect()
     interrupted = await scan_runner.mark_interrupted(db.get_db())

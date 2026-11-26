@@ -8,7 +8,9 @@ import { DnsPanel } from './DnsPanel'
 import { EmailSecurityPanel } from './EmailSecurityPanel'
 import { EndpointsPanel } from './EndpointsPanel'
 import { ExposedServicesPanel } from './ExposedServicesPanel'
+import { FaviconPanel } from './FaviconPanel'
 import { FindingsList } from './FindingsList'
+import { LookalikesPanel } from './LookalikesPanel'
 import { OriginHintsPanel } from './OriginHintsPanel'
 import { RiskFactors, RiskScore } from './RiskScore'
 import { ScanComparison } from './ScanComparison'
@@ -85,6 +87,10 @@ export function Report({ scan, compare = true }: { scan: ScanDetail; compare?: b
       <div className="grid gap-5 lg:grid-cols-2">
         <ClientSidePanel data={r.client_side} />
         <OriginHintsPanel data={r.origin_hints} />
+      </div>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <LookalikesPanel data={r.lookalikes} />
+        <FaviconPanel data={r.favicon} />
       </div>
       <WebSecurityPanel tls={r.tls_check} headers={r.security_headers} />
       <div className="grid gap-5 lg:grid-cols-2">
