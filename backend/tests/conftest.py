@@ -4,6 +4,7 @@ os.environ.setdefault("JWT_SECRET", "test-secret-" + "x" * 40)
 os.environ.setdefault("MONGODB_URI", "mongodb://localhost:27017")
 os.environ.setdefault("FRONTEND_ORIGIN", "http://localhost:5173")
 os.environ["DAILY_SCAN_LIMIT"] = "3"
+os.environ["GUEST_SCAN_LIMIT"] = "3"
 os.environ["TRUSTED_PROXY_HOPS"] = "1"
 os.environ["MAX_CONCURRENT_SCANS"] = "2"
 os.environ["GROQ_API_KEY"] = ""
@@ -40,6 +41,7 @@ async def client(fake_db, monkeypatch):
     rate_limit.login_limiter.reset()
     rate_limit.register_limiter.reset()
     rate_limit.scan_ip_limiter.reset()
+    rate_limit.guest_limiter.reset()
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as c:
         yield c

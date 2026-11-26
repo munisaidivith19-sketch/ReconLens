@@ -161,7 +161,7 @@ async def test_history_paginated(client, auth_headers, public_dns, no_background
     r2 = await client.get("/api/scans?page=2&page_size=2", headers=auth_headers)
     assert len(r2.json()["items"]) == 1
     q = await client.get("/api/scans/quota", headers=auth_headers)
-    assert q.json() == {"limit": 3, "used": 3, "remaining": 0}
+    assert q.json() == {"limit": 3, "used": 3, "remaining": 0, "guest": False}
 
 
 async def test_per_ip_scan_cap(client, auth_headers, public_dns, no_background, monkeypatch):

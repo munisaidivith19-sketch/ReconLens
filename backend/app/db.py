@@ -12,6 +12,8 @@ log = logging.getLogger(__name__)
 SCAN_TTL_SECONDS = 30 * 24 * 3600
 CACHE_TTL_SECONDS = 24 * 3600
 USAGE_TTL_SECONDS = 2 * 24 * 3600
+GUEST_USAGE_TTL_SECONDS = 30 * 24 * 3600
+SHARE_DAYS = 7  # read-only share links expire after a week (or with the scan, if sooner)
 
 _client: AsyncMongoClient | None = None
 _db: Any = None
@@ -69,3 +71,10 @@ async def create_indexes(db: Any) -> None:
 
     await db.usage.create_index([("user_id", ASCENDING), ("date", ASCENDING)], unique=True)
     await db.usage.create_index([("created_at", ASCENDING)], expireAfterSeconds=USAGE_TTL_SECONDS)
+
+    await db.guest_usage.create_index([("ip", ASCENDING)], unique=True)
+    await db.guest_usage.create_index([("created_at", ASCENDING)], expireAfterSeconds=GUEST_USAGE_TTL_SECONDS)
+
+    await db.shares.create_index([("token", ASCENDING)], unique=True)
+    await db.shares.create_index([("scan_id", ASCENDING)])
+    await db.shares.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)

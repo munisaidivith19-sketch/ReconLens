@@ -1,7 +1,10 @@
 import type {
+  GuestTokenResponse,
+  Quota,
   ScanCreateResponse,
   ScanDetail,
   ScanPage,
+  ShareLink,
   TokenResponse,
   User,
 } from '../types/scan'
@@ -33,7 +36,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST'
+  method?: 'GET' | 'POST' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
   auth?: boolean
@@ -97,6 +100,8 @@ export const api = {
   login: (email: string, password: string) =>
     request<TokenResponse>('/api/auth/login', { method: 'POST', body: { email, password }, auth: false }),
 
+  guest: () => request<GuestTokenResponse>('/api/auth/guest', { method: 'POST', auth: false }),
+
   me: () => request<User>('/api/auth/me'),
 
   createScan: (target: string) =>
@@ -108,5 +113,18 @@ export const api = {
 
   exportScan: (id: string) => request<unknown>(`/api/scans/${encodeURIComponent(id)}/export`),
 
-  quota: () => request<{ limit: number; used: number; remaining: number }>('/api/scans/quota'),
+  quota: () => request<Quota>('/api/scans/quota'),
+
+  previousScan: (id: string) =>
+    request<{ previous: ScanDetail | null }>(`/api/scans/${encodeURIComponent(id)}/previous`),
+
+  getShare: (id: string) => request<{ share: ShareLink | null }>(`/api/scans/${encodeURIComponent(id)}/share`),
+
+  createShare: (id: string) =>
+    request<{ share: ShareLink }>(`/api/scans/${encodeURIComponent(id)}/share`, { method: 'POST' }),
+
+  deleteShare: (id: string) => request<void>(`/api/scans/${encodeURIComponent(id)}/share`, { method: 'DELETE' }),
+
+  getShared: (token: string) =>
+    request<{ scan: ScanDetail; expires_at: string }>(`/api/shared/${encodeURIComponent(token)}`, { auth: false }),
 }

@@ -14,6 +14,8 @@ ReconLens is a PASSIVE attack-surface analysis web app for bug bounty hunters an
 - VirusTotal domain reputation
 - GET/POST endpoint discovery from homepage forms and Wayback Machine archived URLs
 - robots.txt and sitemap.xml review
+- JavaScript analysis of the homepage and the same-site scripts it loads (secrets masked, buckets, API routes); found URLs are listed, never requested
+- CDN bypass / origin hints from DNS answers already collected
 Then it calculates a 0–100 risk score and Groq writes a prioritized AI report. The user watches every stage complete live and can export the report.
 
 ==================================================
@@ -45,7 +47,7 @@ Frontend:
 - React Router, TanStack Query, lucide-react icons, recharts (risk gauge/charts)
 
 External data sources (all free):
-- crt.sh, RDAP, NVD API 2.0 (free key), CISA KEV JSON feed, FIRST EPSS API, VirusTotal API v3 (free key), Wayback Machine CDX API, Groq API, enthec/webappanalyzer fingerprint data (open-source Wappalyzer fork; check its license and add attribution)
+- crt.sh, RDAP, NVD API 2.0 (free key), CISA KEV JSON feed, FIRST EPSS API, VirusTotal API v3 (free key), Wayback Machine CDX API, Shodan InternetDB (free, keyless, non-commercial), Groq API, enthec/webappanalyzer fingerprint data (open-source Wappalyzer fork; check its license and add attribution)
 
 ==================================================
 4. DEPLOYMENT CONSTRAINTS (Render free tier + MongoDB Atlas M0)

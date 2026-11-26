@@ -1,6 +1,6 @@
 import { Bot, Compass, FileWarning, ListChecks, Route, Sparkles } from 'lucide-react'
 
-import type { AiReport as AiReportType } from '../../types/scan'
+import type { AiReport as AiReportType, PrioritizedFinding } from '../../types/scan'
 import { Badge, SeverityBadge } from '../ui/Badge'
 import { Card, CardHeader } from '../ui/Card'
 import { Disclosure } from '../ui/Disclosure'
@@ -8,14 +8,14 @@ import { Disclosure } from '../ui/Disclosure'
 export function AiReport({ report }: { report: AiReportType | null }) {
   if (!report)
     return (
-      <Card>
+      <Card className="h-full">
         <CardHeader title="AI report" icon={<Bot size={20} />} description="The report was not generated for this scan." />
       </Card>
     )
 
   const isAi = report.generated_by.startsWith('groq:')
   return (
-    <Card aria-labelledby="ai-title" className="flex flex-col gap-6">
+    <Card aria-labelledby="ai-title" className="flex h-full flex-col gap-6">
       <CardHeader
         id="ai-title"
         title="Analyst report"
@@ -35,46 +35,6 @@ export function AiReport({ report }: { report: AiReportType | null }) {
         </div>
         <p className="leading-relaxed text-muted [overflow-wrap:anywhere]">{report.executive_summary}</p>
       </div>
-
-      {report.prioritized_findings.length > 0 && (
-        <section aria-labelledby="pf-title">
-          <h3 id="pf-title" className="mb-3 flex items-center gap-2 font-semibold">
-            <ListChecks size={18} aria-hidden="true" className="text-accent-text" />
-            Prioritized findings
-          </h3>
-          <ol className="flex flex-col gap-2">
-            {report.prioritized_findings.map((f, i) => (
-              <li key={`${f.title}-${i}`}>
-                <Disclosure
-                  defaultOpen={i === 0}
-                  summary={
-                    <span className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="font-mono text-sm text-faint">{String(i + 1).padStart(2, '0')}</span>
-                      <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{f.title}</span>
-                      <SeverityBadge severity={f.severity} />
-                    </span>
-                  }
-                >
-                  <dl className="grid gap-3 text-sm md:grid-cols-3">
-                    <div className="min-w-0">
-                      <dt className="font-semibold">Why it matters</dt>
-                      <dd className="mt-1 text-muted [overflow-wrap:anywhere]">{f.why_it_matters}</dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="font-semibold">How it could be abused</dt>
-                      <dd className="mt-1 text-muted [overflow-wrap:anywhere]">{f.abuse_scenario}</dd>
-                    </div>
-                    <div className="min-w-0">
-                      <dt className="font-semibold">How to fix</dt>
-                      <dd className="mt-1 text-muted [overflow-wrap:anywhere]">{f.remediation}</dd>
-                    </div>
-                  </dl>
-                </Disclosure>
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
 
       {report.attack_paths.length > 0 && (
         <section aria-labelledby="ap-title">
@@ -140,6 +100,54 @@ export function AiReport({ report }: { report: AiReportType | null }) {
           </section>
         )}
       </div>
+    </Card>
+  )
+}
+
+/** The AI's ranked findings, shown as their own card. Each row: rank | title | severity. */
+export function PrioritizedFindings({ findings }: { findings: PrioritizedFinding[] }) {
+  if (findings.length === 0) return null
+  return (
+    <Card aria-labelledby="pf-title">
+      <CardHeader
+        id="pf-title"
+        title="Prioritized findings"
+        icon={<ListChecks size={20} />}
+        description="Ranked by the analyst report, most urgent first. Open a row for details."
+      />
+      <ol className="flex flex-col gap-2">
+        {findings.map((f, i) => (
+          <li key={`${f.title}-${i}`}>
+            <Disclosure
+              defaultOpen={i === 0}
+              summary={
+                <span className="grid grid-cols-[1.75rem_minmax(0,1fr)] items-center gap-x-3 gap-y-2 sm:grid-cols-[1.75rem_minmax(0,1fr)_6rem]">
+                  <span className="font-mono text-sm text-faint tabular-nums">{String(i + 1).padStart(2, '0')}</span>
+                  <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{f.title}</span>
+                  <span className="col-start-2 sm:col-start-3 sm:justify-self-end">
+                    <SeverityBadge severity={f.severity} className="w-24 justify-center" />
+                  </span>
+                </span>
+              }
+            >
+              <dl className="grid gap-4 border-t border-glass-border pt-4 text-sm md:grid-cols-3">
+                <div className="min-w-0">
+                  <dt className="font-semibold">Why it matters</dt>
+                  <dd className="mt-1 text-muted [overflow-wrap:anywhere]">{f.why_it_matters}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="font-semibold">How it could be abused</dt>
+                  <dd className="mt-1 text-muted [overflow-wrap:anywhere]">{f.abuse_scenario}</dd>
+                </div>
+                <div className="min-w-0">
+                  <dt className="font-semibold">How to fix</dt>
+                  <dd className="mt-1 text-muted [overflow-wrap:anywhere]">{f.remediation}</dd>
+                </div>
+              </dl>
+            </Disclosure>
+          </li>
+        ))}
+      </ol>
     </Card>
   )
 }

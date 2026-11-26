@@ -14,20 +14,30 @@ Enter a domain you're authorized to test. ReconLens gathers public signals, matc
 
 | Check | Source | What you learn |
 |---|---|---|
-| DNS records | Public DNS | A/AAAA/CNAME/MX/NS/TXT/CAA; missing CAA |
+| DNS records | Public DNS | A/AAAA/CNAME/MX/NS/TXT/CAA/SOA/DS/DNSKEY/HTTPS/SVCB/TLSA/SSHFP/NAPTR/URI/LOC/CERT, well-known SRV services, reverse DNS, wildcard and DNSSEC state, mail provider, SaaS services revealed by TXT verification tokens |
 | Registration | RDAP (via rdap.org) | Registrar, creation and expiry dates |
-| Subdomains | crt.sh certificate transparency | Subdomains, flagged ones worth reviewing (dev, staging, admin…) |
+| Subdomains | crt.sh certificate transparency | Subdomains (including names only on expired certificates), flagged ones worth reviewing (dev, staging, admin…) |
+| Subdomain takeover | Public DNS | CNAMEs whose target no longer exists (NXDOMAIN), matched against cloud services where names can be claimed |
+| Exposed services | Shodan InternetDB | Open ports, software and CVEs that Shodan's own scans saw on the domain's IPs (ReconLens never scans ports) |
+| security.txt | The site itself (`/.well-known/security.txt`) | Disclosure contact, policy, expiry, bug bounty hints |
 | TLS | One handshake to port 443 | Trust, hostname match, expiry, protocol, legacy TLS 1.0/1.1 |
 | HTTP security | One homepage GET | Security headers, cookie flags, HTTPS redirect, WAF/CDN |
 | Email security | Public DNS | SPF, DMARC, common DKIM selectors, plus a plain-language "can this domain be spoofed?" verdict |
 | Tech stack | Homepage response + webappanalyzer fingerprints | Technologies and exposed versions |
 | CVEs | NVD API 2.0 | CVEs for detected **versions** only, enriched with CISA KEV ("actively exploited") and FIRST EPSS (exploit probability) |
 | Reputation | VirusTotal v3 | Engine detections, categories, reputation |
-| Endpoints | Homepage forms + Wayback Machine CDX | Form actions/methods, archived paths and GET parameter names (listed, never requested) |
+| Endpoints | Homepage forms + Wayback Machine CDX | Form actions/methods, archived paths and GET parameter names grouped by likely bug class (listed, never requested) |
 | robots.txt / sitemap | The site itself | Disallowed paths, sitemap size |
+| JavaScript analysis | Homepage + up to 10 same-site scripts it loads | Hard-coded secrets (masked), cloud buckets (S3, Azure, GCS, Firebase, Spaces, R2), API routes, in-scope hosts, source maps (listed, never requested) |
+| CDN bypass / origin hints | DNS answers already collected | Subdomains that resolve outside the CDN/WAF in front of the main site, and a shared-hosting map |
 
 On top of these checks it produces:
 - **A risk score (0–100).** Weighted by severity, with bonuses for spoofable email, expired TLS or domain, missing HSTS/CSP, no HTTPS, malicious reputation and KEV-listed CVEs. The top contributing factors are shown.
+- **A summary and quick wins.** Severity counts, attack-surface size, the three issues to fix first, and the configuration-only fixes.
+- **CWE and OWASP Top 10 (2021) labels** on each finding, a search box, and a "Copy as report" button that produces a Markdown bug report.
+- **Exports** as JSON, CSV, Markdown or PDF (print).
+- **Changes since the last scan** of the same domain: score change, new and fixed issues, new subdomains.
+- **Read-only share links** (registered accounts): expire after 7 days or with the scan, and can be revoked.
 - **An AI report from Groq.** It contains an executive summary, prioritized findings (why each matters, how it could be abused at a high level, how to fix it), likely attack paths and next steps. The report is grounded in the scan facts, and any CVE IDs it mentions must appear in those facts. If Groq is unavailable, a deterministic template report is used instead.
 
 ## What it does *not* do
@@ -170,6 +180,7 @@ The tests never touch the network: DNS is patched, and HTTP is mocked with respx
 | `NVD_API_KEY` | recommended | none | Without it, NVD's much lower anonymous rate limit applies |
 | `FRONTEND_ORIGIN` | **yes** in prod | `http://localhost:5173` | Exact origin(s), comma-separated |
 | `DAILY_SCAN_LIMIT` | no | `10` | New scans per user per UTC day |
+| `GUEST_SCAN_LIMIT` | no | `3` | Scans a visitor can run without an account (per IP, counted over 30 days) |
 | `MAX_CONCURRENT_SCANS` | no | `2` | |
 | `TRUSTED_PROXY_HOPS` | no | `1` | Proxies that append to `X-Forwarded-For` (Render: 1; local: 0) |
 | `LOG_LEVEL` | no | `INFO` | |
@@ -224,6 +235,7 @@ Free-tier notes:
 | [FIRST EPSS](https://www.first.org/epss) | Exploit prediction scores | Free use with attribution to FIRST |
 | [VirusTotal](https://www.virustotal.com) | Domain reputation | Public API terms; free tier is non-commercial |
 | [Internet Archive Wayback Machine](https://web.archive.org) | Archived URLs (CDX API) | Internet Archive terms of use |
+| [Shodan InternetDB](https://internetdb.shodan.io) | Open ports, CPEs and CVEs per IP | Free, no key; non-commercial use |
 | [enthec/webappanalyzer](https://github.com/enthec/webappanalyzer) | Technology fingerprints (`backend/app/data/fingerprints`) | **GPL-3.0**: see the `LICENSE` and `NOTICE.md` in that directory |
 | [Groq](https://groq.com) | AI report generation | Groq API terms |
 
@@ -242,6 +254,4 @@ See the in-app **Responsible use** page (`/terms`) for the full policy.
 
 - **Local active mode.** Optional, self-hosted only, never on the public demo: Nmap service detection and Nuclei templates, gated behind explicit scope files.
 - **Retire.js.** Detect vulnerable client-side JavaScript libraries from the script URLs and versions already collected.
-- **Shodan InternetDB.** Free, passive lookup of open ports and CVEs already indexed for the resolved IPs.
-- **security.txt.** Fetch and parse `/.well-known/security.txt` to show disclosure contacts and policy.
-- Scheduled re-scans with diffs, and webhook notifications.
+- Scheduled re-scans and webhook notifications (needs a background worker, so not on the free tier).

@@ -62,7 +62,10 @@ export function Navbar() {
         { to: '/history', label: 'History', icon: History, end: false },
         { to: '/terms', label: 'Responsible use', icon: ScrollText, end: false },
       ]
-    : [{ to: '/terms', label: 'Responsible use', icon: ScrollText, end: false }]
+    : [
+        { to: '/', label: 'New scan', icon: Radar, end: true },
+        { to: '/terms', label: 'Responsible use', icon: ScrollText, end: false },
+      ]
 
   return (
     <header className="no-print sticky top-0 z-40 px-3 pt-3 sm:px-6">

@@ -12,7 +12,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app import db
-from app.api import auth, health, scans
+from app.api import auth, health, scans, shared
 from app.config import get_settings
 from app.scanners.tech_stack import load_fingerprints, warm_up
 from app.services import scan_runner
@@ -171,6 +171,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router)
     app.include_router(auth.router)
     app.include_router(scans.router)
+    app.include_router(shared.router)
     return app
 
 

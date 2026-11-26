@@ -24,3 +24,10 @@ class TokenResponse(BaseModel):
     token_type: str = "bearer"  # noqa: S105
     expires_in: int
     user: UserPublic
+
+
+class GuestTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"  # noqa: S105
+    expires_in: int
+    guest_id: str

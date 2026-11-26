@@ -44,7 +44,7 @@ def test_kev_cves_weigh_heavily():
 def test_top_factors_sorted_and_bounded():
     findings = [f(f"x{i}", s) for i, s in enumerate(["low", "critical", "medium", "high"] * 3)]
     score, factors = calculate(findings)
-    assert len(factors) == 6
+    assert len(factors) == 10
     assert factors[0]["severity"] == "critical"
     assert [x["points"] for x in factors] == sorted([x["points"] for x in factors], reverse=True)
     assert sum(x["points"] for x in factors) <= score + 0.5

@@ -10,6 +10,21 @@ export interface User {
   created_at: string
 }
 
+export interface GuestTokenResponse {
+  access_token: string
+  token_type: string
+  expires_in: number
+  guest_id: string
+}
+
+export interface Quota {
+  limit: number
+  used: number
+  remaining: number
+  /** True when the visitor is not signed in (limit is the free guest allowance). */
+  guest: boolean
+}
+
 export interface TokenResponse {
   access_token: string
   token_type: string
@@ -84,6 +99,99 @@ export interface ScanSummary {
 export interface DnsResult {
   records: Record<string, string[]>
   errors?: Record<string, string>
+  /* Added later; missing on older scans. */
+  srv?: { service: string; records: string[] }[]
+  ptr?: { ip: string; names: string[] }[]
+  wildcard?: boolean
+  dnssec?: { ds: boolean; dnskey: boolean; signed: boolean }
+  mail_providers?: string[]
+  services?: { service: string; record: string }[]
+}
+
+export interface TakeoverEntry {
+  name: string
+  cname: string
+  target_exists: boolean | null
+  service: string | null
+  reference: string | null
+}
+
+export interface TakeoverResult {
+  checked: number
+  total: number
+  timed_out: boolean
+  cnames: TakeoverEntry[]
+  takeover: TakeoverEntry[]
+  dangling: TakeoverEntry[]
+  cloud_hosted: TakeoverEntry[]
+  resolved?: Record<string, string[]>
+}
+
+export interface ClientSecret {
+  type: string
+  label: string
+  severity: Severity
+  matches: { value: string; source: string }[]
+}
+
+export interface ClientSideResult {
+  status: 'ok' | 'unavailable'
+  message?: string
+  scripts_found?: number
+  scripts_external?: number
+  scripts?: { url: string; status: number | null; bytes?: number; truncated?: boolean; error?: string }[]
+  secrets?: ClientSecret[]
+  buckets?: { provider: string; name: string; url: string; source: string }[]
+  endpoints?: { path: string; source: string }[]
+  in_scope_hosts?: string[]
+  third_party_hosts?: string[]
+  source_maps?: { url: string; source: string }[]
+}
+
+export interface OriginCandidate {
+  name: string
+  ips: string[]
+  cname: string | null
+  same_network: boolean
+  hint: string | null
+}
+
+export interface OriginHintsResult {
+  behind_cdn: boolean
+  cdn: string[]
+  main_ips: string[]
+  main_ptr: Record<string, string[]>
+  resolved_count: number
+  unique_ips: number
+  ip_groups: { ip: string; names: string[]; count: number }[]
+  candidates: OriginCandidate[]
+}
+
+export interface SecurityTxtResult {
+  found: boolean
+  url?: string
+  fields?: Record<string, string[]>
+  expired?: boolean | null
+  bug_bounty_hint?: boolean
+  message?: string | null
+}
+
+export interface ExposedHost {
+  ip: string
+  ports: number[]
+  cpes: string[]
+  hostnames: string[]
+  tags: string[]
+  vulns: string[]
+  known: boolean
+}
+
+export interface ExposedServicesResult {
+  source: string
+  available: boolean
+  hosts: ExposedHost[]
+  errors: string[]
+  message?: string | null
 }
 
 export interface WhoisResult {
@@ -104,6 +212,8 @@ export interface SubdomainsResult {
   available: boolean
   count: number
   subdomains: string[]
+  /** Names covered by a certificate that hasn't expired. Missing on scans made before this field existed. */
+  current?: string[]
   truncated?: boolean
   interesting?: string[]
   message?: string
@@ -182,6 +292,7 @@ export interface EndpointsResult {
     total_urls: number
     paths: string[]
     parameters: string[]
+    parameter_classes?: { class: string; label: string; params: string[] }[]
     interesting: { path: string; reason: string }[]
   }
 }
@@ -237,6 +348,11 @@ export interface ScanResults {
   cve_lookup?: CveResult
   virustotal?: VirusTotalResult
   endpoints?: EndpointsResult
+  takeover?: TakeoverResult
+  security_txt?: SecurityTxtResult
+  exposed_services?: ExposedServicesResult
+  client_side?: ClientSideResult
+  origin_hints?: OriginHintsResult
   [key: string]: unknown
 }
 
@@ -250,6 +366,12 @@ export interface ScanDetail extends ScanSummary {
   authorized_at: string
   started_at: string | null
   error: string | null
+}
+
+export interface ShareLink {
+  token: string
+  expires_at: string
+  created_at: string
 }
 
 export interface ScanPage {

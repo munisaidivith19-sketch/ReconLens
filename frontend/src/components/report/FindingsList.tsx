@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { ListFilter } from 'lucide-react'
+import { ListFilter, Search } from 'lucide-react'
 
 import { SEVERITIES, type Finding, type Severity } from '../../types/scan'
 import { SEVERITY_LABEL, severityClass } from '../ui/Badge'
@@ -7,9 +7,12 @@ import { Card, CardHeader } from '../ui/Card'
 import { cn } from '../ui/cn'
 import { Empty } from '../ui/Disclosure'
 import { FindingCard } from './FindingCard'
+import { taxonomyFor } from './taxonomy'
 
-export function FindingsList({ findings }: { findings: Finding[] }) {
+export function FindingsList({ findings, domain }: { findings: Finding[]; domain?: string }) {
   const [active, setActive] = useState<Set<Severity>>(() => new Set(SEVERITIES.filter((s) => s !== 'info')))
+  const [query, setQuery] = useState('')
+  const [quickOnly, setQuickOnly] = useState(false)
 
   const counts = useMemo(() => {
     const c: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
@@ -19,15 +22,25 @@ export function FindingsList({ findings }: { findings: Finding[] }) {
 
   const groups = useMemo(() => {
     const map = new Map<string, Finding[]>()
+    const q = query.trim().toLowerCase()
     findings
       .filter((f) => active.has(f.severity))
+      .filter((f) => !quickOnly || Boolean(taxonomyFor(f.id).quickWin))
+      .filter((f) => {
+        if (!q) return true
+        const tax = taxonomyFor(f.id)
+        const hay = [f.title, f.evidence, f.recommendation, f.category, f.id, tax.cwe ? `cwe-${tax.cwe.id}` : '', tax.owasp?.id ?? '']
+          .join(' ')
+          .toLowerCase()
+        return hay.includes(q)
+      })
       .forEach((f) => {
         const list = map.get(f.category) ?? []
         list.push(f)
         map.set(f.category, list)
       })
     return [...map.entries()].sort((a, b) => b[1].length - a[1].length)
-  }, [findings, active])
+  }, [findings, active, query, quickOnly])
 
   const toggle = (s: Severity) =>
     setActive((prev) => {
@@ -47,6 +60,28 @@ export function FindingsList({ findings }: { findings: Finding[] }) {
         icon={<ListFilter size={20} />}
         description={`${shown} of ${findings.length} shown, grouped by category`}
       />
+
+      <div className="no-print mb-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+        <label className="relative min-w-0 flex-1">
+          <span className="sr-only">Search findings</span>
+          <Search size={16} aria-hidden="true" className="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-faint" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search title, evidence, CWE-79, A05…"
+            className="field min-h-10 pl-10 text-sm"
+          />
+        </label>
+        <button
+          type="button"
+          aria-pressed={quickOnly}
+          onClick={() => setQuickOnly((v) => !v)}
+          className={cn('btn btn-sm', quickOnly ? 'btn-primary' : '')}
+        >
+          Quick wins only
+        </button>
+      </div>
 
       <div role="group" aria-label="Filter by severity" className="no-print mb-5 flex flex-wrap gap-2">
         {SEVERITIES.map((s) => (
@@ -68,7 +103,7 @@ export function FindingsList({ findings }: { findings: Finding[] }) {
       </div>
 
       {groups.length === 0 ? (
-        <Empty>No findings match the selected severities.</Empty>
+        <Empty>No findings match the current filters.</Empty>
       ) : (
         <div className="flex flex-col gap-6">
           {groups.map(([category, list]) => (
@@ -79,7 +114,7 @@ export function FindingsList({ findings }: { findings: Finding[] }) {
               <ul className="flex flex-col gap-2">
                 {list.map((f) => (
                   <li key={f.id}>
-                    <FindingCard finding={f} />
+                    <FindingCard finding={f} domain={domain} />
                   </li>
                 ))}
               </ul>

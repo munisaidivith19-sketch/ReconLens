@@ -22,6 +22,8 @@ class Settings(BaseSettings):
 
     FRONTEND_ORIGIN: str = "http://localhost:5173"
     DAILY_SCAN_LIMIT: int = Field(default=10, ge=1, le=1000)
+    # Scans a visitor can run without an account (per IP address, over GUEST_USAGE_TTL in db.py).
+    GUEST_SCAN_LIMIT: int = Field(default=3, ge=0, le=100)
 
     MAX_CONCURRENT_SCANS: int = Field(default=2, ge=1, le=4)
     LOG_LEVEL: str = "INFO"

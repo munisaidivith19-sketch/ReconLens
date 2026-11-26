@@ -11,9 +11,9 @@ const SECTIONS = [
         <p>ReconLens collects only what a normal browser visit or a public data source provides:</p>
         <ul className="mt-2 list-disc space-y-1 pl-5">
           <li>DNS records, RDAP registration data and certificate-transparency logs (crt.sh)</li>
-          <li>One homepage request, plus robots.txt and sitemap.xml</li>
+          <li>One homepage request, up to 10 same-site scripts that page loads (as a browser would), plus robots.txt, sitemap.xml and security.txt</li>
           <li>A TLS handshake to read the certificate and supported protocol versions</li>
-          <li>Public intelligence sources: NVD, CISA KEV, FIRST EPSS, VirusTotal and the Wayback Machine</li>
+          <li>Public intelligence sources: NVD, CISA KEV, FIRST EPSS, VirusTotal, Shodan InternetDB and the Wayback Machine</li>
         </ul>
         <p className="mt-2">
           It never sends exploit payloads, brute-forces, port-scans, fuzzes parameters, or requests the endpoints it

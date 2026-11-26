@@ -18,15 +18,18 @@ HEAVY_BONUS = {
     "virustotal.malicious": 15.0,
 }
 KEV_BONUS = 15.0
+TAKEOVER_BONUS = 10.0
 MAX_KEV_BONUSES = 3
 SATURATION = 70.0  # raw points at which the score reaches ~63
-TOP_FACTORS = 6
+TOP_FACTORS = 10
 
 
 def _bonus(finding: dict[str, Any], kev_seen: int) -> tuple[float, bool]:
     fid = finding.get("id", "")
     if fid.startswith("cve_lookup.cve.") and "(known exploited)" in finding.get("title", ""):
         return (KEV_BONUS if kev_seen < MAX_KEV_BONUSES else 0.0), True
+    if fid.startswith("takeover.possible."):
+        return TAKEOVER_BONUS, False
     return HEAVY_BONUS.get(fid, 0.0), False
 
 

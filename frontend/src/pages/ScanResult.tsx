@@ -1,25 +1,18 @@
 import { Link, useParams } from 'react-router'
-import { ArrowLeft, CalendarClock, ShieldQuestion } from 'lucide-react'
+import { ArrowLeft, CalendarClock } from 'lucide-react'
 
 import { ApiError } from '../api/client'
-import { AiReport } from '../components/report/AiReport'
-import { CveTable } from '../components/report/CveTable'
-import { DnsPanel } from '../components/report/DnsPanel'
-import { EmailSecurityPanel } from '../components/report/EmailSecurityPanel'
-import { EndpointsPanel } from '../components/report/EndpointsPanel'
 import { ExportButtons } from '../components/report/ExportButtons'
-import { FindingsList } from '../components/report/FindingsList'
-import { RiskScore } from '../components/report/RiskScore'
-import { SubdomainsPanel } from '../components/report/SubdomainsPanel'
-import { TechStackPanel } from '../components/report/TechStackPanel'
-import { WebSecurityPanel } from '../components/report/WebSecurityPanel'
+import { Report } from '../components/report/Report'
+import { ShareButton } from '../components/report/ShareButton'
 import { ProgressTracker } from '../components/scan/ProgressTracker'
 import { Alert } from '../components/ui/Alert'
 import { Badge } from '../components/ui/Badge'
-import { Card, CardHeader } from '../components/ui/Card'
+import { Card } from '../components/ui/Card'
 import { formatDateTime } from '../components/ui/format'
+import { useAuth } from '../hooks/useAuth'
 import { ACTIVE_STATUSES, useScan } from '../hooks/useScan'
-import type { ScanDetail, ScanStatus, VirusTotalResult } from '../types/scan'
+import type { ScanStatus } from '../types/scan'
 
 const STATUS_TONE: Record<ScanStatus, 'accent' | 'ok' | 'danger' | 'warn' | 'neutral'> = {
   queued: 'neutral',
@@ -41,73 +34,8 @@ function Skeleton() {
   )
 }
 
-function ReputationCard({ data }: { data?: VirusTotalResult }) {
-  const stats = data?.stats ?? {}
-  return (
-    <Card aria-labelledby="vt-title">
-      <CardHeader id="vt-title" title="Reputation" icon={<ShieldQuestion size={20} />} description="VirusTotal domain report" />
-      {!data || data.status !== 'ok' ? (
-        <p className="text-sm text-muted">{data?.message ?? 'Reputation data unavailable.'}</p>
-      ) : (
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap gap-2">
-            <Badge tone={stats.malicious ? 'danger' : 'ok'}>{stats.malicious ?? 0} malicious</Badge>
-            <Badge tone={stats.suspicious ? 'warn' : 'neutral'}>{stats.suspicious ?? 0} suspicious</Badge>
-            <Badge>{stats.harmless ?? 0} harmless</Badge>
-            {typeof data.reputation === 'number' && <Badge>reputation {data.reputation}</Badge>}
-          </div>
-          {data.permalink && (
-            <a
-              href={data.permalink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-sm font-semibold text-accent-text underline-offset-4 hover:underline"
-            >
-              View on VirusTotal
-            </a>
-          )}
-        </div>
-      )}
-    </Card>
-  )
-}
-
-function Report({ scan }: { scan: ScanDetail }) {
-  const r = scan.results
-  const failed = scan.stages.filter((s) => s.status === 'failed')
-  return (
-    <div className="flex flex-col gap-5">
-      {failed.length > 0 && (
-        <Alert tone="warning" title={`${failed.length} check(s) did not complete`}>
-          {failed.map((s) => `${s.label}: ${s.error ?? 'failed'}`).join(' · ')}. The rest of the report is unaffected.
-        </Alert>
-      )}
-      <div className="grid items-start gap-5 lg:grid-cols-3">
-        <div className="flex min-w-0 flex-col gap-5">
-          <RiskScore score={scan.risk_score ?? 0} factors={scan.score_factors} />
-          <ReputationCard data={r.virustotal} />
-        </div>
-        <div className="min-w-0 lg:col-span-2">
-          <AiReport report={scan.ai_report} />
-        </div>
-      </div>
-      <FindingsList findings={scan.findings} />
-      <EmailSecurityPanel data={r.email_security} />
-      <div className="grid items-start gap-5 lg:grid-cols-2">
-        <TechStackPanel data={r.tech_stack} />
-        <CveTable data={r.cve_lookup} />
-      </div>
-      <WebSecurityPanel tls={r.tls_check} headers={r.security_headers} />
-      <div className="grid items-start gap-5 lg:grid-cols-2">
-        <EndpointsPanel data={r.endpoints} robots={r.robots_sitemap} />
-        <SubdomainsPanel data={r.subdomains} />
-      </div>
-      <DnsPanel data={r.dns_records} whois={r.whois_rdap} />
-    </div>
-  )
-}
-
 export default function ScanResult() {
+  const { isGuest } = useAuth()
   const { id } = useParams()
   const { data: scan, error, isLoading } = useScan(id)
 
@@ -119,8 +47,8 @@ export default function ScanResult() {
         tone="danger"
         title={notFound ? 'Scan not found' : "Couldn't load this scan"}
         action={
-          <Link to="/history" className="btn btn-sm">
-            Scan history
+          <Link to={isGuest ? '/' : '/history'} className="btn btn-sm">
+            {isGuest ? 'New scan' : 'Scan history'}
           </Link>
         }
       >
@@ -138,8 +66,8 @@ export default function ScanResult() {
 
   return (
     <div className="flex flex-col gap-5">
-      <Link to="/history" className="no-print btn btn-sm btn-ghost w-fit text-muted">
-        <ArrowLeft size={16} aria-hidden="true" /> All scans
+      <Link to={isGuest ? '/' : '/history'} className="no-print btn btn-sm btn-ghost w-fit text-muted">
+        <ArrowLeft size={16} aria-hidden="true" /> {isGuest ? 'New scan' : 'All scans'}
       </Link>
 
       <Card strong className="animate-rise">
@@ -157,7 +85,12 @@ export default function ScanResult() {
               <span>Authorization confirmed {formatDateTime(scan.authorized_at)}</span>
             </div>
           </div>
-          {!active && <ExportButtons scanId={scan.id} domain={scan.domain} />}
+          {!active && (
+            <div className="flex flex-col items-start gap-2 sm:items-end">
+              <ExportButtons scan={scan} />
+              {!isGuest && scan.status === 'completed' && <ShareButton scanId={scan.id} />}
+            </div>
+          )}
         </div>
       </Card>
 

@@ -114,6 +114,29 @@ async def dns_query(name: str, rdtype: str) -> list[str]:
     return out
 
 
+async def dns_name_exists(name: str) -> bool | None:
+    """True if the name exists in DNS, False on NXDOMAIN, None if it couldn't be determined.
+
+    Used for dangling-CNAME checks. Scanners call it as ``base.dns_name_exists`` so tests can patch it.
+    """
+    import dns.asyncresolver
+    import dns.exception
+    import dns.resolver
+
+    resolver = dns.asyncresolver.Resolver()
+    resolver.lifetime = 5.0
+    resolver.timeout = 2.5
+    try:
+        await resolver.resolve(name, "A")
+        return True
+    except dns.resolver.NXDOMAIN:
+        return False
+    except dns.resolver.NoAnswer:
+        return True  # the name exists, it just has no A record
+    except (dns.resolver.NoNameservers, dns.exception.Timeout):
+        return None
+
+
 class Scanner(ABC):
     name: ClassVar[str]
     label: ClassVar[str]

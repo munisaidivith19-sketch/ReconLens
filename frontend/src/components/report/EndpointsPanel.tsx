@@ -67,6 +67,30 @@ export function EndpointsPanel({ data, robots }: { data?: EndpointsResult; robot
                   </ul>
                 </Disclosure>
               )}
+              {(wb.parameter_classes?.length ?? 0) > 0 && (
+                <Disclosure
+                  defaultOpen
+                  summary={<span className="font-medium">Parameters by bug type ({wb.parameter_classes!.length})</span>}
+                >
+                  <p className="mb-3 text-xs text-muted">
+                    Hints for manual testing, grouped by name. ReconLens did not send any requests with them.
+                  </p>
+                  <dl className="flex flex-col gap-3">
+                    {wb.parameter_classes!.map((c) => (
+                      <div key={c.class} className="grid gap-1.5 sm:grid-cols-[12rem_minmax(0,1fr)]">
+                        <dt className="text-sm font-medium">{c.label}</dt>
+                        <dd className="flex min-w-0 flex-wrap gap-1.5">
+                          {c.params.map((p) => (
+                            <code key={p} className="chip text-muted">
+                              {p}
+                            </code>
+                          ))}
+                        </dd>
+                      </div>
+                    ))}
+                  </dl>
+                </Disclosure>
+              )}
               {wb.parameters.length > 0 && (
                 <Disclosure summary={<span className="font-medium">GET parameters ({wb.parameters.length})</span>}>
                   <div className="flex flex-wrap gap-1.5">

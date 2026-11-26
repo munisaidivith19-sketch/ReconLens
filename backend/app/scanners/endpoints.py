@@ -32,6 +32,77 @@ INTERESTING_RE = re.compile(
     r"swagger|openapi|actuator|metrics|reset|token|callback|redirect|export|import)",
     re.IGNORECASE,
 )
+# Parameter names grouped by the bug class testers usually check them for. Hints only:
+# ReconLens never sends requests with these parameters.
+PARAM_CLASSES: tuple[tuple[str, str, frozenset[str]], ...] = (
+    (
+        "redirect",
+        "Open redirect / SSRF",
+        frozenset(
+            "url uri redirect redirect_uri redirect_url redirecturl return returnurl return_url returnto return_to "
+            "next goto dest destination continue target link out callback forward rurl u to image_url feed "
+            "host domain site proxy".split()
+        ),
+    ),
+    (
+        "file",
+        "File inclusion / path traversal",
+        frozenset(
+            "file filename path filepath page include inc template tpl doc document folder dir download load "
+            "read view layout module conf config lang locale".split()
+        ),
+    ),
+    (
+        "idor",
+        "IDOR / access control",
+        frozenset(
+            "id uid user userid user_id account accountid account_id order orderid order_id invoice no number "
+            "pid profile profile_id customer customer_id member memberid doc_id report_id key".split()
+        ),
+    ),
+    (
+        "injection",
+        "SQL injection / search input",
+        frozenset(
+            "q query search s keyword keywords filter sort sortby sort_by order_by orderby category cat type where".split()
+        ),
+    ),
+    (
+        "xss",
+        "Reflected XSS candidates",
+        frozenset("message msg comment name title text content error err alert callback jsonp html".split()),
+    ),
+    (
+        "command",
+        "Command injection",
+        frozenset("cmd exec command execute ping ip run shell process daemon".split()),
+    ),
+    (
+        "debug",
+        "Debug / feature flags",
+        frozenset("debug test dev admin preview mode env verbose trace beta internal".split()),
+    ),
+    (
+        "auth",
+        "Tokens & secrets in URLs",
+        frozenset(
+            "token access_token auth key api_key apikey secret password pass pwd session sessionid sid code "
+            "state jwt signature sig".split()
+        ),
+    ),
+)
+
+
+def classify_parameters(params: list[str]) -> list[dict[str, object]]:
+    out = []
+    lowered = {p: p.lower().replace("-", "_") for p in params}
+    for key, label, names in PARAM_CLASSES:
+        hits = sorted(p for p, low in lowered.items() if low in names)
+        if hits:
+            out.append({"class": key, "label": label, "params": hits[:50]})
+    return out
+
+
 _PARAM_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_\-\[\].]{0,59}$")
 _STATIC_EXT = re.compile(
     r"\.(png|jpe?g|gif|svg|webp|ico|css|woff2?|ttf|eot|mp4|webm|mp3|avif)$", re.IGNORECASE
@@ -122,6 +193,7 @@ def analyze_archive(urls: list[str], domain: str) -> dict[str, Any]:
         "total_urls": len(urls),
         "paths": sorted(paths)[:MAX_PATHS],
         "parameters": sorted(params)[:MAX_PARAMS],
+        "parameter_classes": classify_parameters(sorted(params)[:MAX_PARAMS]),
         "interesting": interesting[:100],
     }
 
@@ -246,6 +318,33 @@ class EndpointsScanner(Scanner):
                     Severity.INFO,
                     evidence=", ".join(wayback["parameters"][:20]),
                     recommendation="Parameters are input points. Make sure each is validated server-side.",
+                )
+            )
+        classes = {c["class"]: c for c in wayback.get("parameter_classes") or []}
+        if "auth" in classes:
+            f.append(
+                self.finding(
+                    "archived_secrets_in_urls",
+                    "Archived URLs carry tokens or credentials as parameters",
+                    Severity.LOW,
+                    evidence="Parameters: " + ", ".join(classes["auth"]["params"][:15]),
+                    recommendation=(
+                        "Tokens in URLs end up in logs, browser history and public archives like this one. "
+                        "Move them to headers or POST bodies and rotate any that were exposed."
+                    ),
+                )
+            )
+        if "redirect" in classes:
+            f.append(
+                self.finding(
+                    "archived_redirect_params",
+                    "Archived URLs use redirect-style parameters",
+                    Severity.INFO,
+                    evidence="Parameters: " + ", ".join(classes["redirect"]["params"][:15]),
+                    recommendation=(
+                        "Parameters like these are common open-redirect and SSRF entry points. Validate them "
+                        "against an allowlist of destinations."
+                    ),
                 )
             )
         return result

@@ -1,6 +1,7 @@
 import json
 import re
-from datetime import UTC, datetime
+import secrets
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from bson import ObjectId
@@ -8,16 +9,22 @@ from bson.errors import InvalidId
 from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import Response
 
-from app.api.deps import CurrentUser, Database, client_ip
+from app.api.deps import CurrentUser, Database, ScanUser, client_ip
+from app.config import get_settings
 from app.core.cache import get_cached_scan_id
 from app.core.rate_limit import (
+    GuestLimitError,
     QuotaExceededError,
     RateLimitedError,
+    consume_guest_quota,
     consume_scan_quota,
+    get_guest_quota_status,
     get_quota_status,
+    refund_guest_quota,
     scan_ip_limiter,
 )
 from app.core.ssrf_guard import BlockedTargetError, validate_target
+from app.db import SCAN_TTL_SECONDS, SHARE_DAYS
 from app.models.scan import ScanCreate, ScanDetail, ScanPage, ScanStatus, ScanSummary
 from app.services import scan_runner
 
@@ -71,7 +78,7 @@ async def _owned_scan(db: Any, scan_id: str, user: dict[str, Any]) -> dict[str, 
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_scan(body: ScanCreate, request: Request, user: CurrentUser, db: Database) -> dict[str, Any]:
+async def create_scan(body: ScanCreate, request: Request, user: ScanUser, db: Database) -> dict[str, Any]:
     if body.confirmed_authorized is not True:  # also enforced by the schema
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -102,6 +109,25 @@ async def create_scan(body: ScanCreate, request: Request, user: CurrentUser, db:
     )
     if active:
         return {"scan": _summary(active).model_dump(mode="json"), "cached": False, "quota_remaining": None}
+
+    # Guests get GUEST_SCAN_LIMIT scans per IP in total, cached results included.
+    is_guest = bool(user.get("guest"))
+    ip = client_ip(request)
+    guest_remaining: int | None = None
+    if is_guest:
+        try:
+            guest_remaining = await consume_guest_quota(db, ip)
+        except GuestLimitError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "guest_limit_reached",
+                    "message": (
+                        f"You've used your {exc.limit} free scans. Create a free account or sign in "
+                        f"to run {get_settings().DAILY_SCAN_LIMIT} scans a day."
+                    ),
+                },
+            ) from None
 
     base_doc = {
         "user_id": user_id,
@@ -137,11 +163,17 @@ async def create_scan(body: ScanCreate, request: Request, user: CurrentUser, db:
             }
             res = await db.scans.insert_one(doc)
             doc["_id"] = res.inserted_id
-            return {"scan": _summary(doc).model_dump(mode="json"), "cached": True, "quota_remaining": None}
+            return {
+                "scan": _summary(doc).model_dump(mode="json"),
+                "cached": True,
+                "quota_remaining": guest_remaining,
+            }
 
     try:
-        scan_ip_limiter.hit(client_ip(request))
+        scan_ip_limiter.hit(ip)
     except RateLimitedError:
+        if is_guest:
+            await refund_guest_quota(db, ip)
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail={
@@ -150,7 +182,7 @@ async def create_scan(body: ScanCreate, request: Request, user: CurrentUser, db:
             },
         ) from None
     try:
-        remaining = await consume_scan_quota(db, user_id)
+        remaining = guest_remaining if is_guest else await consume_scan_quota(db, user_id)
     except QuotaExceededError as exc:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -178,12 +210,15 @@ async def create_scan(body: ScanCreate, request: Request, user: CurrentUser, db:
 
 @router.get("", response_model=ScanPage)
 async def list_scans(
-    user: CurrentUser,
+    user: ScanUser,
     db: Database,
     page: int = Query(1, ge=1, le=1000),
     page_size: int = Query(20, ge=1, le=50),
+    domain: str | None = Query(None, max_length=253, pattern=r"^[A-Za-z0-9.-]+$"),
 ) -> ScanPage:
-    flt = {"user_id": str(user["_id"])}
+    flt: dict[str, Any] = {"user_id": str(user["_id"])}
+    if domain:
+        flt["domain"] = domain.lower()
     total = await db.scans.count_documents(flt)
     projection = {"results": 0, "ai_report": 0, "stages": 0, "score_factors": 0}
     cursor = (
@@ -195,17 +230,91 @@ async def list_scans(
 
 
 @router.get("/quota")
-async def quota(user: CurrentUser, db: Database) -> dict[str, int]:
-    return await get_quota_status(db, str(user["_id"]))
+async def quota(request: Request, user: ScanUser, db: Database) -> dict[str, Any]:
+    if user.get("guest"):
+        return {**await get_guest_quota_status(db, client_ip(request)), "guest": True}
+    return {**await get_quota_status(db, str(user["_id"])), "guest": False}
 
 
 @router.get("/{scan_id}", response_model=ScanDetail)
-async def get_scan(scan_id: str, user: CurrentUser, db: Database) -> ScanDetail:
+async def get_scan(scan_id: str, user: ScanUser, db: Database) -> ScanDetail:
     return _detail(await _owned_scan(db, scan_id, user))
 
 
+@router.get("/{scan_id}/previous")
+async def previous_scan(scan_id: str, user: ScanUser, db: Database) -> dict[str, Any]:
+    """The user's last completed scan of the same domain before this one, for comparison."""
+    doc = await _owned_scan(db, scan_id, user)
+    prev = await db.scans.find_one(
+        {
+            "user_id": str(user["_id"]),
+            "domain": doc["domain"],
+            "status": ScanStatus.COMPLETED.value,
+            "created_at": {"$lt": doc["created_at"]},
+        },
+        sort=[("created_at", -1)],
+    )
+    return {"previous": _detail(prev).model_dump(mode="json") if prev else None}
+
+
+# ------------------------------------------------------------------ read-only share links
+
+
+def _share_out(share: dict[str, Any] | None) -> dict[str, Any]:
+    if not share:
+        return {"share": None}
+    return {
+        "share": {
+            "token": share["token"],
+            "expires_at": share["expires_at"],
+            "created_at": share["created_at"],
+        }
+    }
+
+
+@router.get("/{scan_id}/share")
+async def get_share(scan_id: str, user: CurrentUser, db: Database) -> dict[str, Any]:
+    doc = await _owned_scan(db, scan_id, user)
+    share = await db.shares.find_one({"scan_id": str(doc["_id"]), "expires_at": {"$gt": datetime.now(UTC)}})
+    return _share_out(share)
+
+
+@router.post("/{scan_id}/share", status_code=status.HTTP_201_CREATED)
+async def create_share(scan_id: str, user: CurrentUser, db: Database) -> dict[str, Any]:
+    """Create (or return the existing) read-only link. Registered accounts only."""
+    doc = await _owned_scan(db, scan_id, user)
+    if doc["status"] != ScanStatus.COMPLETED.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": "not_completed", "message": "Only completed scans can be shared."},
+        )
+    now = datetime.now(UTC)
+    existing = await db.shares.find_one({"scan_id": str(doc["_id"]), "expires_at": {"$gt": now}})
+    if existing:
+        return _share_out(existing)
+    # A share never outlives the scan it points to.
+    created = doc["created_at"] if doc["created_at"].tzinfo else doc["created_at"].replace(tzinfo=UTC)
+    expires = min(now + timedelta(days=SHARE_DAYS), created + timedelta(seconds=SCAN_TTL_SECONDS))
+    share = {
+        "token": secrets.token_urlsafe(24),
+        "scan_id": str(doc["_id"]),
+        "user_id": str(user["_id"]),
+        "created_at": now,
+        "expires_at": expires,
+    }
+    await db.shares.insert_one(share)
+    return _share_out(share)
+
+
+@router.delete("/{scan_id}/share", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_share(scan_id: str, user: CurrentUser, db: Database) -> Response:
+    doc = await _owned_scan(db, scan_id, user)
+    await db.shares.delete_many({"scan_id": str(doc["_id"]), "user_id": str(user["_id"])})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get("/{scan_id}/export")
-async def export_scan(scan_id: str, user: CurrentUser, db: Database) -> Response:
+async def export_scan(scan_id: str, user: ScanUser, db: Database) -> Response:
     doc = await _owned_scan(db, scan_id, user)
     detail = _detail(doc).model_dump(mode="json")
     payload = {

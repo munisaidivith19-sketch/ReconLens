@@ -65,6 +65,43 @@ async def get_quota_status(db: Any, user_id: str) -> dict[str, int]:
     return {"limit": limit, "used": used, "remaining": max(0, limit - used)}
 
 
+class GuestLimitError(Exception):
+    def __init__(self, limit: int):
+        super().__init__(f"Guest scan limit of {limit} reached")
+        self.limit = limit
+
+
+async def consume_guest_quota(db: Any, ip: str) -> int:
+    """Count one guest scan for this IP; raise GuestLimitError if over GUEST_SCAN_LIMIT.
+
+    Counted per IP (not per guest token) so a new browser session doesn't reset it.
+    Returns the number of guest scans remaining.
+    """
+    limit = get_settings().GUEST_SCAN_LIMIT
+    doc = await db.guest_usage.find_one_and_update(
+        {"ip": ip},
+        {"$inc": {"scan_count": 1}, "$setOnInsert": {"created_at": datetime.now(UTC)}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    count = int(doc.get("scan_count", 1))
+    if count > limit:
+        await db.guest_usage.update_one({"ip": ip}, {"$inc": {"scan_count": -1}})
+        raise GuestLimitError(limit)
+    return limit - count
+
+
+async def refund_guest_quota(db: Any, ip: str) -> None:
+    await db.guest_usage.update_one({"ip": ip, "scan_count": {"$gt": 0}}, {"$inc": {"scan_count": -1}})
+
+
+async def get_guest_quota_status(db: Any, ip: str) -> dict[str, int]:
+    limit = get_settings().GUEST_SCAN_LIMIT
+    doc = await db.guest_usage.find_one({"ip": ip})
+    used = int(doc.get("scan_count", 0)) if doc else 0
+    return {"limit": limit, "used": used, "remaining": max(0, limit - used)}
+
+
 class SlidingWindowLimiter:
     """Simple per-key sliding-window limiter."""
 
@@ -96,6 +133,8 @@ class SlidingWindowLimiter:
 # 10 login attempts and 5 registrations per IP per 15 minutes.
 login_limiter = SlidingWindowLimiter(max_requests=10, window_seconds=15 * 60)
 register_limiter = SlidingWindowLimiter(max_requests=5, window_seconds=15 * 60)
+# Guest tokens per IP per 15 minutes.
+guest_limiter = SlidingWindowLimiter(max_requests=20, window_seconds=15 * 60)
 # New (non-cached) scans per IP per 24 hours, so farming accounts can't multiply the per-user quota.
 scan_ip_limiter = SlidingWindowLimiter(max_requests=30, window_seconds=24 * 3600)
 

@@ -4,9 +4,9 @@ from fastapi import APIRouter, HTTPException, Request, status
 from pymongo.errors import DuplicateKeyError
 
 from app.api.deps import CurrentUser, Database, client_ip
-from app.core.rate_limit import RateLimitedError, login_limiter, register_limiter
-from app.core.security import create_access_token, hash_password, verify_password
-from app.models.user import TokenResponse, UserCreate, UserLogin, UserPublic
+from app.core.rate_limit import RateLimitedError, guest_limiter, login_limiter, register_limiter
+from app.core.security import create_access_token, create_guest_token, hash_password, verify_password
+from app.models.user import GuestTokenResponse, TokenResponse, UserCreate, UserLogin, UserPublic
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -68,6 +68,14 @@ async def login(body: UserLogin, request: Request, db: Database) -> TokenRespons
     if not verify_password(body.password, user.get("password_hash") if user else None) or not user:
         raise _LOGIN_FAILED
     return _token_response(user)
+
+
+@router.post("/guest", response_model=GuestTokenResponse, status_code=status.HTTP_201_CREATED)
+async def guest(request: Request) -> GuestTokenResponse:
+    """Token for trying ReconLens without an account (limited by GUEST_SCAN_LIMIT per IP)."""
+    _rate_limit(guest_limiter, request)
+    token, guest_id, expires_in = create_guest_token()
+    return GuestTokenResponse(access_token=token, expires_in=expires_in, guest_id=guest_id)
 
 
 @router.get("/me", response_model=UserPublic)
