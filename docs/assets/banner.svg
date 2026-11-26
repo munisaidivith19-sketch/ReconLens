@@ -1,0 +1,129 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="t d">
+  <title id="t">ReconLens</title>
+  <desc id="d">Passive attack-surface analysis for bug bounty hunters and security teams. An animated radar sweeps over discovered assets.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#050a14"/>
+      <stop offset="0.6" stop-color="#081426"/>
+      <stop offset="1" stop-color="#0b1d33"/>
+    </linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#1f3a5c" stroke-width="0.6" opacity="0.45"/>
+    </pattern>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sweep" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity="0"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0.55"/>
+    </linearGradient>
+    <linearGradient id="title" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#e0f2fe"/>
+      <stop offset="0.55" stop-color="#67e8f9"/>
+      <stop offset="1" stop-color="#34d399"/>
+    </linearGradient>
+    <linearGradient id="scanline" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#22d3ee" stop-opacity="0"/>
+      <stop offset="0.5" stop-color="#22d3ee" stop-opacity="0.10"/>
+      <stop offset="1" stop-color="#22d3ee" stop-opacity="0"/>
+    </linearGradient>
+    <clipPath id="typing">
+      <rect x="64" y="226" width="420" height="34">
+        <animate attributeName="width" values="0;420;420;0" keyTimes="0;0.45;0.92;1" dur="7s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0 0 1 1;0.4 0 0.6 1"/>
+      </rect>
+    </clipPath>
+    <clipPath id="frame"><rect width="1200" height="360" rx="18"/></clipPath>
+  </defs>
+
+  <g clip-path="url(#frame)">
+    <rect width="1200" height="360" fill="url(#bg)"/>
+    <rect width="1200" height="360" fill="url(#grid)"/>
+
+    <!-- moving scan line -->
+    <rect x="0" y="-120" width="1200" height="120" fill="url(#scanline)">
+      <animate attributeName="y" values="-120;360" dur="6s" repeatCount="indefinite"/>
+    </rect>
+
+    <!-- radar -->
+    <g transform="translate(965 180)">
+      <circle r="170" fill="url(#glow)"/>
+      <g fill="none" stroke="#22d3ee" stroke-opacity="0.35">
+        <circle r="150"/>
+        <circle r="110" stroke-opacity="0.28"/>
+        <circle r="70" stroke-opacity="0.22"/>
+        <circle r="30" stroke-opacity="0.18"/>
+        <path d="M-160 0H160M0 -160V160" stroke-opacity="0.15"/>
+      </g>
+      <g>
+        <path d="M0 0L150 0A150 150 0 0 0 106 -106Z" fill="url(#sweep)"/>
+        <line x1="0" y1="0" x2="150" y2="0" stroke="#67e8f9" stroke-width="2"/>
+        <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="5s" repeatCount="indefinite"/>
+      </g>
+      <!-- discovered assets (blips) -->
+      <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#a5f3fc">
+        <g transform="translate(92 -58)">
+          <circle r="4" fill="#34d399"><animate attributeName="opacity" values="0.2;1;0.2" dur="5s" begin="0.4s" repeatCount="indefinite"/></circle>
+          <text x="9" y="4" opacity="0.8">api.</text>
+        </g>
+        <g transform="translate(-58 -96)">
+          <circle r="4" fill="#fbbf24"><animate attributeName="opacity" values="0.2;1;0.2" dur="5s" begin="1.9s" repeatCount="indefinite"/></circle>
+          <text x="9" y="4" opacity="0.8">dev.</text>
+        </g>
+        <g transform="translate(-104 52)">
+          <circle r="4" fill="#f87171"><animate attributeName="opacity" values="0.2;1;0.2" dur="5s" begin="3.2s" repeatCount="indefinite"/></circle>
+          <text x="9" y="4" opacity="0.8">CVE</text>
+        </g>
+        <g transform="translate(44 98)">
+          <circle r="4" fill="#34d399"><animate attributeName="opacity" values="0.2;1;0.2" dur="5s" begin="4.1s" repeatCount="indefinite"/></circle>
+          <text x="9" y="4" opacity="0.8">mail.</text>
+        </g>
+        <g transform="translate(20 -18)">
+          <circle r="3" fill="#a78bfa"><animate attributeName="opacity" values="0.2;1;0.2" dur="5s" begin="4.8s" repeatCount="indefinite"/></circle>
+        </g>
+      </g>
+      <circle r="5" fill="#67e8f9"/>
+    </g>
+
+    <!-- shield mark -->
+    <g transform="translate(64 62)">
+      <path d="M22 0L44 8V24C44 38 34 48 22 52C10 48 0 38 0 24V8Z" fill="none" stroke="#67e8f9" stroke-width="2.5"/>
+      <circle cx="21" cy="25" r="8" fill="none" stroke="#34d399" stroke-width="2.5"/>
+      <path d="M27 31L33 37" stroke="#34d399" stroke-width="2.5" stroke-linecap="round"/>
+    </g>
+    <text x="122" y="100" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-size="56" font-weight="800" letter-spacing="1" fill="url(#title)">ReconLens</text>
+    <text x="66" y="150" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-size="22" fill="#cbd5e1">Passive attack-surface analysis for bug bounty hunters</text>
+    <text x="66" y="180" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" font-size="22" fill="#cbd5e1">and security teams.</text>
+
+    <!-- terminal prompt with typing effect -->
+    <rect x="56" y="218" width="600" height="48" rx="10" fill="#020617" fill-opacity="0.7" stroke="#1e3a5f"/>
+    <g clip-path="url(#typing)" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="18">
+      <text x="72" y="249"><tspan fill="#34d399">$</tspan><tspan fill="#e2e8f0"> reconlens scan target.com </tspan><tspan fill="#67e8f9">--passive</tspan></text>
+    </g>
+    <rect x="72" y="234" width="10" height="20" fill="#67e8f9">
+      <animate attributeName="x" values="72;478;478;72" keyTimes="0;0.45;0.92;1" dur="7s" repeatCount="indefinite" calcMode="spline" keySplines="0.4 0 0.6 1;0 0 1 1;0.4 0 0.6 1"/>
+      <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+    </rect>
+
+    <!-- pills -->
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" font-weight="600">
+      <g transform="translate(56 296)">
+        <rect width="134" height="30" rx="15" fill="#052e2b" stroke="#34d399" stroke-opacity="0.6"/>
+        <text x="67" y="20" text-anchor="middle" fill="#6ee7b7">PASSIVE ONLY</text>
+      </g>
+      <g transform="translate(202 296)">
+        <rect width="150" height="30" rx="15" fill="#082f49" stroke="#22d3ee" stroke-opacity="0.6"/>
+        <text x="75" y="20" text-anchor="middle" fill="#67e8f9">SSRF-GUARDED</text>
+      </g>
+      <g transform="translate(364 296)">
+        <rect width="120" height="30" rx="15" fill="#1e1b4b" stroke="#a78bfa" stroke-opacity="0.6"/>
+        <text x="60" y="20" text-anchor="middle" fill="#c4b5fd">16 CHECKS</text>
+      </g>
+      <g transform="translate(496 296)">
+        <rect width="160" height="30" rx="15" fill="#3b0d0d" stroke="#f87171" stroke-opacity="0.6"/>
+        <text x="80" y="20" text-anchor="middle" fill="#fca5a5">CVE · KEV · EPSS</text>
+      </g>
+    </g>
+  </g>
+  <rect x="0.5" y="0.5" width="1199" height="359" rx="18" fill="none" stroke="#1e3a5f"/>
+</svg>
