@@ -32,6 +32,8 @@ services:
         sync: false
       - key: NVD_API_KEY
         sync: false
+      - key: ABUSECH_AUTH_KEY
+        sync: false
       - key: FRONTEND_ORIGIN
         sync: false
       - key: DAILY_SCAN_LIMIT

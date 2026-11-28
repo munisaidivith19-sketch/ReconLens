@@ -105,7 +105,7 @@ class OriginHintsScanner(Scanner):
     label = "CDN bypass / origin hints"
     category = "Attack surface"
     timeout = 10.0
-    depends_on = ("dns_records", "takeover", "security_headers")
+    depends_on = ("dns_records", "takeover", "security_headers", "ip_intel")
 
     async def run(self, ctx: ScanContext) -> ScannerResult:
         dns = ctx.results.get("dns_records") or {}
@@ -117,6 +117,13 @@ class OriginHintsScanner(Scanner):
         resolved: dict[str, list[str]] = takeover.get("resolved") or {}
         cname_of = {c["name"]: c.get("cname") for c in takeover.get("cnames") or []}
         ptr_names = {p["ip"]: p.get("names") or [] for p in dns.get("ptr") or []}
+        ip_hosts = {h["ip"]: h for h in (ctx.results.get("ip_intel") or {}).get("hosts") or []}
+        main_cdn = {
+            ip_hosts[ip].get("provider") for ip in main_ips if ip_hosts.get(ip, {}).get("kind") == "cdn"
+        }
+        for provider in sorted(p for p in main_cdn if p):
+            if not any(provider.lower() in c.lower() or c.lower() in provider.lower() for c in cdn):
+                cdn.append(provider)
 
         # Group every resolved subdomain by IP: a map of the infrastructure.
         by_ip: dict[str, list[str]] = {}
@@ -131,6 +138,11 @@ class OriginHintsScanner(Scanner):
             outside = [ip for ip in ips if ip not in main_ips]
             if not outside or not ips or len(outside) < len(ips):
                 continue  # shares an address with the main site, so it is behind the same edge
+            if all(ip_hosts.get(ip, {}).get("kind") == "cdn" for ip in outside):
+                continue  # a CDN edge address (possibly another CDN), not an origin
+            provider = next(
+                (ip_hosts[ip].get("provider") for ip in outside if ip_hosts.get(ip, {}).get("provider")), None
+            )
             same_net = any(_network(ip) in main_nets for ip in outside)
             candidates.append(
                 {
@@ -139,6 +151,7 @@ class OriginHintsScanner(Scanner):
                     "cname": cname_of.get(name),
                     "same_network": same_net,
                     "hint": _origin_word(name, ctx.domain),
+                    "provider": provider,
                 }
             )
         # Most interesting first: origin-like names, then everything else.

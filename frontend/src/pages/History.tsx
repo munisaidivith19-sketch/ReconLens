@@ -107,6 +107,11 @@ export default function History() {
                     <span className="flex flex-wrap gap-1.5">
                       <Badge tone={STATUS_TONE[s.status]}>{s.status}</Badge>
                       {s.cached && <Badge>cached</Badge>}
+                      {s.batch_id && (
+                        <Link to={`/batches/${s.batch_id}`} title="Open the multi-domain view">
+                          <Badge tone="accent">batch</Badge>
+                        </Link>
+                      )}
                     </span>
                   </td>
                 </tr>

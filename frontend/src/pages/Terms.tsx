@@ -13,7 +13,7 @@ const SECTIONS = [
           <li>DNS records, RDAP registration data and certificate-transparency logs (crt.sh)</li>
           <li>One homepage request, up to 10 same-site scripts and the favicon that page loads (as a browser would), plus robots.txt, sitemap.xml, security.txt and the MTA-STS mail policy if one is published</li>
           <li>A TLS handshake to read the certificate and supported protocol versions</li>
-          <li>Public intelligence sources: NVD, CISA KEV, FIRST EPSS, VirusTotal, Shodan InternetDB, the Wayback Machine and Retire.js vulnerability data</li>
+          <li>Public intelligence sources: NVD, CISA KEV, FIRST EPSS, VirusTotal, Shodan InternetDB, the Wayback Machine, Retire.js vulnerability data, Team Cymru IP-to-ASN, Spamhaus DBL, abuse.ch URLhaus and hstspreload.org</li>
         </ul>
         <p className="mt-2">
           It never sends exploit payloads, brute-forces, port-scans, fuzzes parameters, or requests the endpoints it

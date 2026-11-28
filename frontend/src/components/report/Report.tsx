@@ -1,7 +1,10 @@
+import { useAuth } from '../../hooks/useAuth'
+import { useTriage } from '../../hooks/useTriage'
 import type { ScanDetail, VirusTotalResult } from '../../types/scan'
 import { Alert } from '../ui/Alert'
 import { Badge } from '../ui/Badge'
 import { AiReport, PrioritizedFindings } from './AiReport'
+import { BlocklistsPanel } from './BlocklistsPanel'
 import { ClientSidePanel } from './ClientSidePanel'
 import { CveTable } from './CveTable'
 import { DnsPanel } from './DnsPanel'
@@ -9,6 +12,8 @@ import { EmailSecurityPanel } from './EmailSecurityPanel'
 import { EndpointsPanel } from './EndpointsPanel'
 import { ExposedServicesPanel } from './ExposedServicesPanel'
 import { FaviconPanel } from './FaviconPanel'
+import { HstsPreloadPanel } from './HstsPreloadPanel'
+import { IpIntelPanel } from './IpIntelPanel'
 import { FindingsList } from './FindingsList'
 import { LookalikesPanel } from './LookalikesPanel'
 import { OriginHintsPanel } from './OriginHintsPanel'
@@ -20,6 +25,7 @@ import { QuickWins, SummaryPanel } from './SummaryPanel'
 import { TakeoverPanel } from './TakeoverPanel'
 import { TechStackPanel } from './TechStackPanel'
 import { WebSecurityPanel } from './WebSecurityPanel'
+import { WordPressPanel } from './WordPressPanel'
 
 function ReputationSummary({ data }: { data?: VirusTotalResult }) {
   const stats = data?.stats ?? {}
@@ -49,6 +55,9 @@ function ReputationSummary({ data }: { data?: VirusTotalResult }) {
 
 /** The full report body, shared by the owner's page and the read-only share page. */
 export function Report({ scan, compare = true }: { scan: ScanDetail; compare?: boolean }) {
+  // compare=true means the owner's own view (not a shared link): triage is available to accounts.
+  const { isGuest } = useAuth()
+  const triage = useTriage(scan.id, compare && !isGuest)
   const r = scan.results
   const failed = scan.stages.filter((s) => s.status === 'failed')
   return (
@@ -73,12 +82,13 @@ export function Report({ scan, compare = true }: { scan: ScanDetail; compare?: b
         <QuickWins scan={scan} />
       </div>
       <PrioritizedFindings findings={scan.ai_report?.prioritized_findings ?? []} />
-      <FindingsList findings={scan.findings} domain={scan.domain} />
+      <FindingsList findings={scan.findings} domain={scan.domain} triage={triage} />
       <EmailSecurityPanel data={r.email_security} />
       <div className="grid gap-5 lg:grid-cols-2">
         <TechStackPanel data={r.tech_stack} />
         <CveTable data={r.cve_lookup} />
       </div>
+      {r.wordpress?.detected && <WordPressPanel data={r.wordpress} />}
       <div className="grid gap-5 lg:grid-cols-3">
         <ExposedServicesPanel data={r.exposed_services} />
         <TakeoverPanel data={r.takeover} />
@@ -87,6 +97,11 @@ export function Report({ scan, compare = true }: { scan: ScanDetail; compare?: b
       <div className="grid gap-5 lg:grid-cols-2">
         <ClientSidePanel data={r.client_side} />
         <OriginHintsPanel data={r.origin_hints} />
+      </div>
+      <div className="grid gap-5 lg:grid-cols-3">
+        <IpIntelPanel data={r.ip_intel} />
+        <BlocklistsPanel data={r.blocklists} />
+        <HstsPreloadPanel data={r.hsts_preload} />
       </div>
       <div className="grid gap-5 lg:grid-cols-2">
         <LookalikesPanel data={r.lookalikes} />

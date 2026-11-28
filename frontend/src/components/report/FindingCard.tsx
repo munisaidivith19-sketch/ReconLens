@@ -1,12 +1,22 @@
 import { useState } from 'react'
 import { Check, ClipboardCopy, ExternalLink } from 'lucide-react'
 
-import type { Finding } from '../../types/scan'
+import { TRIAGE_LABEL, TRIAGE_TONE } from '../../hooks/useTriage'
+import type { Finding, TriageItem, TriageStatus } from '../../types/scan'
 import { Badge, SeverityBadge } from '../ui/Badge'
 import { Disclosure } from '../ui/Disclosure'
 import { copyText, findingMarkdown, taxonomyFor } from './taxonomy'
+import { TriageControl } from './TriageControl'
 
-export function FindingCard({ finding, domain }: { finding: Finding; domain?: string }) {
+interface FindingCardProps {
+  finding: Finding
+  domain?: string
+  /** Present for the scan owner (registered accounts): shows the triage control. */
+  triage?: { item?: TriageItem; save: (status: TriageStatus, note: string) => Promise<void> }
+}
+
+export function FindingCard({ finding, domain, triage }: FindingCardProps) {
+  const triaged = triage?.item && triage.item.status !== 'open' ? triage.item : undefined
   const tax = taxonomyFor(finding.id)
   const [copied, setCopied] = useState<'ok' | 'fail' | null>(null)
 
@@ -20,7 +30,16 @@ export function FindingCard({ finding, domain }: { finding: Finding; domain?: st
     <Disclosure
       summary={
         <span className="grid grid-cols-1 items-center gap-x-3 gap-y-2 sm:grid-cols-[minmax(0,1fr)_6rem]">
-          <span className="min-w-0 font-medium [overflow-wrap:anywhere]">{finding.title}</span>
+          <span className="min-w-0">
+            <span className={triaged ? 'font-medium text-muted [overflow-wrap:anywhere]' : 'font-medium [overflow-wrap:anywhere]'}>
+              {finding.title}
+            </span>
+            {triaged && (
+              <Badge tone={TRIAGE_TONE[triaged.status]} className="ml-2 align-middle" title={triaged.note || undefined}>
+                {TRIAGE_LABEL[triaged.status]}
+              </Badge>
+            )}
+          </span>
           <span className="sm:justify-self-end">
             <SeverityBadge severity={finding.severity} className="w-24 justify-center" />
           </span>
@@ -58,6 +77,7 @@ export function FindingCard({ finding, domain }: { finding: Finding; domain?: st
             <p className="mt-1 text-muted [overflow-wrap:anywhere]">{finding.recommendation}</p>
           </div>
         )}
+        {triage && <TriageControl key={triage.item?.updated_at ?? 'new'} item={triage.item} onSave={triage.save} />}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-faint">
           <span>Check: {finding.scanner}</span>
           {finding.references.map((r) => (

@@ -40,6 +40,29 @@ class ScanCreate(BaseModel):
     )
 
 
+MAX_BATCH_TARGETS = 5
+
+
+class BatchCreate(BaseModel):
+    targets: list[str] = Field(min_length=1, max_length=MAX_BATCH_TARGETS)
+    confirmed_authorized: Literal[True] = Field(
+        description="Must be true: the user confirms they own or are authorized to test every target."
+    )
+
+
+class TriageStatus(StrEnum):
+    OPEN = "open"
+    FALSE_POSITIVE = "false_positive"
+    ACCEPTED_RISK = "accepted_risk"
+    REPORTED = "reported"
+    FIXED = "fixed"
+
+
+class TriageUpdate(BaseModel):
+    status: TriageStatus
+    note: str = Field(default="", max_length=1000)
+
+
 class ScoreFactor(BaseModel):
     label: str
     points: float
@@ -56,6 +79,7 @@ class ScanSummary(BaseModel):
     created_at: datetime
     finished_at: datetime | None = None
     cached: bool = False
+    batch_id: str | None = None
 
 
 class ScanDetail(ScanSummary):

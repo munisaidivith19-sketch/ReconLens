@@ -16,6 +16,8 @@ import Terms from './pages/Terms'
 const ScanResult = lazy(() => import('./pages/ScanResult'))
 const History = lazy(() => import('./pages/History'))
 const SharedScan = lazy(() => import('./pages/SharedScan'))
+const BatchResult = lazy(() => import('./pages/BatchResult'))
+const ApiKeys = lazy(() => import('./pages/ApiKeys'))
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { user } = useAuth()
@@ -133,6 +135,22 @@ export default function App() {
               }
             />
             <Route path="/shared/:token" element={<SharedScan />} />
+            <Route
+              path="/batches/:id"
+              element={
+                <RequireAuth>
+                  <BatchResult />
+                </RequireAuth>
+              }
+            />
+            <Route
+              path="/settings/api-keys"
+              element={
+                <RequireAuth>
+                  <ApiKeys />
+                </RequireAuth>
+              }
+            />
             <Route path="/terms" element={<Terms />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

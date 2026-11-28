@@ -1,5 +1,6 @@
 """Password hashing (Argon2 via pwdlib) and JWT access tokens (PyJWT)."""
 
+import hashlib
 import secrets
 from datetime import UTC, datetime, timedelta
 
@@ -84,3 +85,23 @@ def decode_access_token(token: str) -> str:
     if payload.get("type") != "access" or not isinstance(payload.get("sub"), str):
         raise InvalidTokenError("Invalid token")
     return payload["sub"]
+
+
+# ------------------------------------------------------------------ personal API keys
+
+API_KEY_PREFIX = "rl_"
+
+
+def generate_api_key() -> tuple[str, str, str]:
+    """Return (key, sha256 hash to store, short display prefix). The key itself is never stored."""
+    key = API_KEY_PREFIX + secrets.token_urlsafe(32)
+    return key, hash_api_key(key), key[:10]
+
+
+def hash_api_key(key: str) -> str:
+    # 256 bits of randomness: a fast hash is enough (nothing to brute-force), and lookup is by hash.
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+def looks_like_api_key(token: str) -> bool:
+    return token.startswith(API_KEY_PREFIX) and 20 <= len(token) <= 100

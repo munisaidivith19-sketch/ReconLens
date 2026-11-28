@@ -402,6 +402,26 @@ class SafeHttpClient:
             return resp
         raise BlockedTargetError("too_many_redirects", "The target redirected too many times.")
 
+    async def post_form(
+        self,
+        url: str,
+        *,
+        data: dict[str, str],
+        headers: dict[str, str] | None = None,
+        max_bytes: int = DEFAULT_MAX_BYTES,
+        timeout: httpx.Timeout | float | None = None,
+    ) -> SafeResponse:
+        """POST a small form to a fixed third-party API (never to a scan target). No redirects."""
+        target = normalize_target(url)
+        if "://" not in url:
+            raise BlockedTargetError("invalid_host", "An absolute URL is required.")
+        ips = await resolve_and_validate(target.host)
+        body = str(httpx.QueryParams(data)).encode()
+        form_headers = {"Content-Type": "application/x-www-form-urlencoded", **(headers or {})}
+        return await self._request_once(
+            target, ips[0], form_headers, max_bytes, False, timeout, method="POST", content=body
+        )
+
     async def _request_once(
         self,
         target: Target,
@@ -410,6 +430,9 @@ class SafeHttpClient:
         max_bytes: int,
         allow_truncate: bool,
         timeout: httpx.Timeout | float | None = None,
+        *,
+        method: str = "GET",
+        content: bytes | None = None,
     ) -> SafeResponse:
         default_port = ALLOWED_SCHEMES[target.scheme]
         host_header = target.host if target.port == default_port else f"{target.host}:{target.port}"
@@ -420,9 +443,10 @@ class SafeHttpClient:
         ip_url = _url_for_ip(target.scheme, ip, target.port, target.path)
 
         request = self._client.build_request(
-            "GET",
+            method,
             ip_url,
             headers=req_headers,
+            content=content,
             extensions=extensions,
             **({"timeout": timeout} if timeout is not None else {}),
         )

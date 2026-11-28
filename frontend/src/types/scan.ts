@@ -92,6 +92,7 @@ export interface ScanSummary {
   created_at: string
   finished_at: string | null
   cached: boolean
+  batch_id?: string | null
 }
 
 /* Scanner result payloads (loose: scanners may add fields over time) */
@@ -211,6 +212,7 @@ export interface OriginCandidate {
   cname: string | null
   same_network: boolean
   hint: string | null
+  provider?: string | null
 }
 
 export interface OriginHintsResult {
@@ -405,6 +407,87 @@ export interface RobotsResult {
   interesting: string[]
 }
 
+export type NetworkKind = 'cdn' | 'cloud' | 'hosting' | 'saas' | 'other' | 'unknown'
+
+export interface IpHost {
+  ip: string
+  names: string[]
+  asn?: number | null
+  prefix?: string | null
+  country?: string | null
+  as_name?: string | null
+  provider?: string | null
+  kind: NetworkKind
+}
+
+export interface IpIntelResult {
+  hosts: IpHost[]
+  providers: { provider: string; kind: NetworkKind; ips: number; names: number }[]
+  asn_count: number
+  main_kind: NetworkKind | null
+  main_provider: string | null
+  source: string
+}
+
+export interface DblResult {
+  status: 'listed' | 'not_listed' | 'unavailable'
+  reasons: string[]
+  message?: string
+}
+
+export interface UrlhausResult {
+  status: 'listed' | 'not_listed' | 'unavailable' | 'skipped'
+  message?: string
+  url_count?: number
+  online?: number
+  first_seen?: string | null
+  reference?: string | null
+  urls?: { url: string; status: string; threat: string; date_added?: string; tags: string[] }[]
+}
+
+export interface BlocklistsResult {
+  spamhaus_dbl: Record<string, DblResult>
+  urlhaus: UrlhausResult
+}
+
+export interface HstsPreloadResult {
+  domain: string
+  status: string
+  preloaded_domain?: string | null
+  bulk: boolean
+  covered: boolean
+  header: { present: boolean; max_age: number | null; include_subdomains: boolean; preload: boolean }
+  eligible: boolean
+  problems: string[]
+  https: boolean
+}
+
+export interface WpCve {
+  id: string
+  cvss: number | null
+  severity: Severity
+  kev: boolean
+  description: string
+  url: string
+}
+
+export interface WpComponent {
+  type: 'plugin' | 'theme'
+  slug: string
+  version: string | null
+  status?: string
+  cves: WpCve[]
+}
+
+export interface WordPressResult {
+  detected: boolean
+  core_version?: string | null
+  components: WpComponent[]
+  plugin_count?: number
+  theme_count?: number
+  vulnerable_count?: number
+}
+
 export interface ScanResults {
   dns_records?: DnsResult
   whois_rdap?: WhoisResult
@@ -424,6 +507,10 @@ export interface ScanResults {
   origin_hints?: OriginHintsResult
   favicon?: FaviconResult
   lookalikes?: LookalikesResult
+  ip_intel?: IpIntelResult
+  blocklists?: BlocklistsResult
+  hsts_preload?: HstsPreloadResult
+  wordpress?: WordPressResult
   [key: string]: unknown
 }
 
@@ -437,6 +524,45 @@ export interface ScanDetail extends ScanSummary {
   authorized_at: string
   started_at: string | null
   error: string | null
+}
+
+export type TriageStatus = 'open' | 'false_positive' | 'accepted_risk' | 'reported' | 'fixed'
+
+export interface TriageItem {
+  status: TriageStatus
+  note: string
+  updated_at: string
+}
+
+export interface BatchItem {
+  target: string
+  ok: boolean
+  scan?: ScanSummary
+  cached?: boolean
+  error?: { code: string; message: string }
+}
+
+export interface BatchScan extends ScanSummary {
+  severities: Partial<Record<Severity, number>>
+  top_findings: { id: string; title: string; severity: Severity }[]
+}
+
+export interface BatchDetail {
+  batch_id: string
+  created_at: string
+  targets: string[]
+  errors: { target: string; code: string; message: string }[]
+  scans: BatchScan[]
+}
+
+export interface ApiKey {
+  id: string
+  name: string
+  prefix: string
+  created_at: string
+  last_used_at: string | null
+  /** Only present in the response that created the key. */
+  key?: string
 }
 
 export interface ShareLink {

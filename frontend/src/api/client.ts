@@ -1,10 +1,15 @@
 import type {
+  ApiKey,
+  BatchDetail,
+  BatchItem,
   GuestTokenResponse,
   Quota,
   ScanCreateResponse,
   ScanDetail,
   ScanPage,
   ShareLink,
+  TriageItem,
+  TriageStatus,
   TokenResponse,
   User,
 } from '../types/scan'
@@ -36,7 +41,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
 }
 
 interface RequestOptions {
-  method?: 'GET' | 'POST' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'DELETE'
   body?: unknown
   signal?: AbortSignal
   auth?: boolean
@@ -124,6 +129,29 @@ export const api = {
     request<{ share: ShareLink }>(`/api/scans/${encodeURIComponent(id)}/share`, { method: 'POST' }),
 
   deleteShare: (id: string) => request<void>(`/api/scans/${encodeURIComponent(id)}/share`, { method: 'DELETE' }),
+
+  createBatch: (targets: string[]) =>
+    request<{ batch_id: string; items: BatchItem[] }>('/api/scans/batch', {
+      method: 'POST',
+      body: { targets, confirmed_authorized: true },
+    }),
+
+  getBatch: (id: string) => request<BatchDetail>(`/api/scans/batch/${encodeURIComponent(id)}`),
+
+  getTriage: (scanId: string) =>
+    request<{ items: Record<string, TriageItem> }>(`/api/scans/${encodeURIComponent(scanId)}/triage`),
+
+  setTriage: (scanId: string, findingId: string, status: TriageStatus, note: string) =>
+    request<{ finding_id: string; item: TriageItem | null }>(
+      `/api/scans/${encodeURIComponent(scanId)}/triage/${encodeURIComponent(findingId)}`,
+      { method: 'PUT', body: { status, note } },
+    ),
+
+  listKeys: () => request<{ items: ApiKey[]; max: number }>('/api/keys'),
+
+  createKey: (name: string) => request<ApiKey>('/api/keys', { method: 'POST', body: { name } }),
+
+  deleteKey: (id: string) => request<void>(`/api/keys/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 
   getShared: (token: string) =>
     request<{ scan: ScanDetail; expires_at: string }>(`/api/shared/${encodeURIComponent(token)}`, { auth: false }),

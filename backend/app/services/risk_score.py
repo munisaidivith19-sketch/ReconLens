@@ -16,6 +16,8 @@ HEAVY_BONUS = {
     "security_headers.missing_csp": 5.0,
     "security_headers.no_https": 10.0,
     "virustotal.malicious": 15.0,
+    "blocklists.spamhaus_listed": 12.0,
+    "blocklists.urlhaus_online": 15.0,
 }
 KEV_BONUS = 15.0
 TAKEOVER_BONUS = 10.0

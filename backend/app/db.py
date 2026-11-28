@@ -13,6 +13,8 @@ SCAN_TTL_SECONDS = 30 * 24 * 3600
 CACHE_TTL_SECONDS = 24 * 3600
 USAGE_TTL_SECONDS = 2 * 24 * 3600
 GUEST_USAGE_TTL_SECONDS = 30 * 24 * 3600
+BATCH_TTL_SECONDS = 30 * 24 * 3600  # batches expire with their scans
+TRIAGE_TTL_SECONDS = 365 * 24 * 3600  # triage decisions kept a year after the last change
 SHARE_DAYS = 7  # read-only share links expire after a week (or with the scan, if sooner)
 
 _client: AsyncMongoClient | None = None
@@ -78,3 +80,14 @@ async def create_indexes(db: Any) -> None:
     await db.shares.create_index([("token", ASCENDING)], unique=True)
     await db.shares.create_index([("scan_id", ASCENDING)])
     await db.shares.create_index([("expires_at", ASCENDING)], expireAfterSeconds=0)
+
+    await db.batches.create_index([("batch_id", ASCENDING)], unique=True)
+    await db.batches.create_index([("created_at", ASCENDING)], expireAfterSeconds=BATCH_TTL_SECONDS)
+
+    await db.triage.create_index(
+        [("user_id", ASCENDING), ("domain", ASCENDING), ("finding_id", ASCENDING)], unique=True
+    )
+    await db.triage.create_index([("updated_at", ASCENDING)], expireAfterSeconds=TRIAGE_TTL_SECONDS)
+
+    await db.api_keys.create_index([("hash", ASCENDING)], unique=True)
+    await db.api_keys.create_index([("user_id", ASCENDING)])

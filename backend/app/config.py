@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     GROQ_MODEL: str = "openai/gpt-oss-120b"
     VT_API_KEY: str = ""
     NVD_API_KEY: str = ""
+    ABUSECH_AUTH_KEY: str = ""  # free abuse.ch account key for URLhaus (optional)
 
     FRONTEND_ORIGIN: str = "http://localhost:5173"
     DAILY_SCAN_LIMIT: int = Field(default=10, ge=1, le=1000)

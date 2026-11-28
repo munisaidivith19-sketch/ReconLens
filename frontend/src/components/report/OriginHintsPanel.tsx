@@ -56,6 +56,7 @@ export function OriginHintsPanel({ data }: { data?: OriginHintsResult }) {
                       </span>
                     </span>
                     <span className="flex flex-wrap gap-1.5 sm:justify-self-end">
+                      {c.provider && <Badge title="Network owner (Team Cymru)">{c.provider}</Badge>}
                       {c.hint && <Badge tone={data.behind_cdn ? 'warn' : 'neutral'}>{c.hint}</Badge>}
                       {c.same_network && <Badge title="Same /24 network as the main site">same network</Badge>}
                     </span>

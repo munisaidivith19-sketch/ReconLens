@@ -76,7 +76,8 @@ Expand a group to see each check, where its data comes from, and what you learn.
 | **DNS records** | Public DNS | A/AAAA/CNAME/MX/NS/TXT/CAA/SOA/DS/DNSKEY/HTTPS/SVCB/TLSA/SSHFP/NAPTR/URI/LOC/CERT, 28 well-known SRV services, reverse DNS, wildcard and DNSSEC state, mail provider, and SaaS tools revealed by TXT verification tokens |
 | **Subdomains** | crt.sh certificate transparency | Every name on a certificate, including ones that only appear on expired certificates, with the interesting ones flagged (dev, staging, admin…) |
 | **Subdomain takeover** | Public DNS | CNAMEs whose target no longer exists (NXDOMAIN), matched against 32 cloud services where the name can be claimed |
-| **CDN bypass / origin hints** | DNS answers already collected | Subdomains that resolve outside the CDN or WAF in front of the main site, and a shared-hosting map |
+| **IP ownership & hosting** | Team Cymru IP-to-ASN (DNS) | The ASN, country and cloud, CDN or hosting company behind every address, so you can spot shadow IT |
+| **CDN bypass / origin hints** | DNS answers already collected | Subdomains that resolve outside the CDN or WAF in front of the main site (CDN edge networks excluded), and a shared-hosting map |
 | **Favicon fingerprint** | The site's favicon (one request) | Shodan's favicon hash, with ready-made Shodan, FOFA and ZoomEye searches to find related hosts and origin servers |
 | **Exposed services** | Shodan InternetDB | Open ports, software and CVEs that Shodan's own scans saw on the domain's IPs. ReconLens never scans ports. |
 | **Registration** | RDAP | Registrar, creation and expiry dates, transfer lock |
@@ -90,12 +91,14 @@ Expand a group to see each check, where its data comes from, and what you learn.
 | Check | Source | What you learn |
 |---|---|---|
 | **TLS** | One handshake to port 443 | Trust chain, hostname match, expiry, key and signature strength, legacy TLS 1.0/1.1 |
+| **HSTS preload** | hstspreload.org | Whether browsers force HTTPS from the first visit, and what the header still needs to qualify |
 | **HTTP security** | One homepage GET | Security headers (HSTS, CSP, framing, nosniff, Referrer and Permissions policies), cookie flags, HTTPS redirect, WAF/CDN |
 | **Email security** | Public DNS | SPF, DMARC and common DKIM selectors, with a plain-language verdict on whether the domain can be spoofed in phishing emails |
 | **security.txt** | `/.well-known/security.txt` | Disclosure contact, policy, expiry, and hints of a bug bounty programme (RFC 9116) |
 | **Mail transport security** | Public DNS + MTA-STS policy file | MTA-STS (mode and policy), TLS-RPT and BIMI, so mail can't be silently downgraded to plaintext |
 | **Lookalike domains** | Public DNS | Registered typosquats of the domain (other TLDs, look-alike characters, keyboard typos, phishing words), flagging the ones with mail servers. DNS only; never visited |
 | **Reputation** | VirusTotal v3 | Engine detections, categories, reputation score |
+| **Blocklists** | Spamhaus DBL (DNS) + abuse.ch URLhaus | Spam, phishing or malware listings, and malware URLs hosted on the site (URLhaus needs a free key) |
 
 </details>
 
@@ -110,6 +113,7 @@ Expand a group to see each check, where its data comes from, and what you learn.
 | **Actively exploited** | CISA KEV | Which of those CVEs attackers are exploiting in the wild |
 | **Exploit probability** | FIRST EPSS | How likely each CVE is to be exploited in the next 30 days |
 | **Vulnerable JS libraries** | Retire.js data + script URLs and contents | Outdated jQuery, Bootstrap, Angular, Swiper and 70+ other libraries with known CVEs, and the version that fixes them |
+| **WordPress plugins & themes** | `?ver=` on homepage asset URLs + NVD | Plugin and theme versions matched to CVEs (with KEV). No plugin paths or readme files are probed |
 
 </details>
 
@@ -136,8 +140,27 @@ Everything discovered here is **listed, never requested**.
 | ⚡ | **Summary & quick wins** | Severity counts, attack-surface size, the three issues to fix first, and the fixes that only need a configuration change. |
 | 🏷️ | **CWE + OWASP Top 10** | Every finding is labelled, the findings are searchable (try `CWE-319` or `A05`), and **Copy as report** produces a Markdown bug report ready to paste. |
 | 🔁 | **Changes since last scan** | Score change, new and fixed issues, and new subdomains compared with your previous scan of the same domain. |
+| ✅ | **Triage** | Mark each finding as reported, fixed, accepted risk or false positive, with a note. Decisions carry over to later scans of the same domain, and resolved findings can be hidden. |
+| 🗂️ | **Multi-domain scans** | Scan up to 5 domains in one go and get a combined view ranked by risk. Each domain uses one scan from the daily quota. |
+| 🔑 | **API keys** | Personal keys for scripts and CI. They're shown once and stored only as a SHA-256 hash, and they can scan but can't create or revoke keys. |
 | 🔗 | **Share links** | Read-only links to a report. They expire after 7 days and can be revoked at any time. |
 | 📤 | **Exports** | JSON, CSV (protected against formula injection), Markdown and print-ready PDF. |
+
+<details>
+<summary><b>Use it from scripts or CI</b></summary>
+<br>
+
+Create a key under **API keys** in the app, then:
+
+```bash
+curl -X POST https://reconlens-api-3x9x.onrender.com/api/scans   -H "Authorization: Bearer $RECONLENS_KEY"   -H "Content-Type: application/json"   -d '{"target": "example.com", "confirmed_authorized": true}'
+
+curl -H "Authorization: Bearer $RECONLENS_KEY" https://reconlens-api-3x9x.onrender.com/api/scans/<id>/export
+```
+
+`POST /api/scans/batch` with `{"targets": [...], "confirmed_authorized": true}` scans up to 5 domains at once.
+
+</details>
 
 ## ⚙️ How a scan works
 
@@ -148,7 +171,7 @@ sequenceDiagram
     participant W as Web app
     participant A as API
     participant G as SSRF guard
-    participant S as 18 scanners
+    participant S as 22 scanners
     participant D as Public sources
 
     U->>W: Enter domain + confirm authorization
@@ -160,7 +183,7 @@ sequenceDiagram
     par Scanners run in parallel, ordered by dependencies
         A->>S: Run each scanner with its own timeout
         S->>G: Every outbound request
-        G->>D: crt.sh · RDAP · NVD · KEV · EPSS · VirusTotal · Wayback · InternetDB · target site
+        G->>D: crt.sh · RDAP · NVD · KEV · EPSS · VirusTotal · Wayback · InternetDB · Cymru · Spamhaus · target site
     end
     loop Every 1.5 s
         W->>A: GET /api/scans/{id}
@@ -181,14 +204,14 @@ flowchart LR
 
     subgraph API["FastAPI · Render web service"]
         direction TB
-        R["Auth · quotas · rate limits<br/>scans · share links"] --> RUN["scan_runner<br/>asyncio · max 2 concurrent"]
-        RUN --> SC["18 scanners"]
+        R["Auth · API keys · quotas<br/>scans · batches · triage · shares"] --> RUN["scan_runner<br/>asyncio · max 2 concurrent"]
+        RUN --> SC["22 scanners"]
         RUN --> RS["risk_score"]
         RUN --> AI["ai_report"]
         SC --> GUARD{{"SSRF guard<br/>SafeHttpClient"}}
     end
 
-    API --> DB[("MongoDB Atlas M0<br/>users · scans · caches · shares<br/>TTL expiry")]
+    API --> DB[("MongoDB Atlas M0<br/>users · scans · caches · shares<br/>batches · triage · api_keys · TTL")]
     GUARD --> T["Target site<br/>homepage · scripts · robots · TLS"]
     GUARD --> P["Public data<br/>crt.sh · RDAP · NVD · KEV · EPSS<br/>VirusTotal · Wayback · InternetDB"]
     AI --> GQ["Groq API"]
@@ -224,6 +247,7 @@ A tool that fetches attacker-chosen URLs is itself an SSRF target, so the guard 
 - Tokens are short-lived HS256 JWTs with a pinned algorithm and required issuer, audience and expiry claims.
 - Error messages are generic, and login timing is equalized so it doesn't reveal whether an account exists.
 - Guest sessions use a separate token type that can't reach account-only features such as history or share links.
+- Personal API keys (`rl_…`) are 256-bit random values. Only their SHA-256 hash is stored, they share the account's quota, and they can't create or revoke keys.
 - Share tokens are 192-bit random values. Expiry is checked on every request, and a TTL index deletes expired links.
 
 </details>
@@ -326,6 +350,7 @@ DNS is patched and HTTP is mocked with respx, so the test suite runs offline.
 | `GROQ_MODEL` | no | `openai/gpt-oss-120b` | Any Groq model with JSON mode |
 | `VT_API_KEY` | recommended | none | Without it, the reputation check is skipped |
 | `NVD_API_KEY` | recommended | none | Without it, NVD's much lower anonymous rate limit applies |
+| `ABUSECH_AUTH_KEY` | no | none | Free abuse.ch Auth-Key; without it, the URLhaus check is skipped |
 | `FRONTEND_ORIGIN` | **yes** in prod | `http://localhost:5173` | Exact origin(s), comma-separated |
 | `DAILY_SCAN_LIMIT` | no | `10` | New scans per user per UTC day |
 | `GUEST_SCAN_LIMIT` | no | `3` | Scans a visitor can run without an account (per IP, counted over 30 days) |
@@ -352,7 +377,7 @@ DNS is patched and HTTP is mocked with respx, so the test suite runs offline.
 1. **Create the database.** In MongoDB Atlas, create a free **M0** cluster and a database user. Under *Network Access*, allow `0.0.0.0/0`, because Render's free tier has no static outbound IPs. Copy the `mongodb+srv://` connection string.
 2. **Get API keys:** [Groq](https://console.groq.com/keys), [VirusTotal](https://www.virustotal.com/gui/my-apikey) (free account) and [NVD](https://nvd.nist.gov/developers/request-an-api-key).
 3. **Create the Blueprint.** In Render, go to **New → Blueprint** and select this repository. Render reads `render.yaml`.
-4. **Fill in the secrets** marked `sync: false`: `MONGODB_URI`, `GROQ_API_KEY`, `VT_API_KEY`, `NVD_API_KEY` and `FRONTEND_ORIGIN`. `JWT_SECRET` is generated automatically.
+4. **Fill in the secrets** marked `sync: false`: `MONGODB_URI`, `GROQ_API_KEY`, `VT_API_KEY`, `NVD_API_KEY`, `ABUSECH_AUTH_KEY` (optional) and `FRONTEND_ORIGIN`. `JWT_SECRET` is generated automatically.
 5. **Match the URLs.** If Render assigns different service URLs, update `VITE_API_URL`, the CSP `connect-src` in `render.yaml` and `FRONTEND_ORIGIN`, then redeploy the static site. For a custom domain, add it to `FRONTEND_ORIGIN` too.
 6. **Verify.** `https://<api>/api/health` should return `{"status":"ok","database":"ok"}`. Then register and scan a domain you own.
 
@@ -390,6 +415,10 @@ ReconLens deliberately does **not** do active scanning: no port scans, directory
 | [VirusTotal](https://www.virustotal.com) | Domain reputation | Public API terms; free tier is non-commercial |
 | [Internet Archive Wayback Machine](https://web.archive.org) | Archived URLs (CDX API) | Internet Archive terms of use |
 | [Shodan InternetDB](https://internetdb.shodan.io) | Open ports, CPEs and CVEs per IP | Free, no key; non-commercial use |
+| [Team Cymru IP-to-ASN](https://www.team-cymru.com/ip-asn-mapping) | IP → ASN and network owner (DNS) | Free public service |
+| [Spamhaus DBL](https://www.spamhaus.org/blocklists/domain-blocklist/) | Domain blocklist (DNS) | Free for low-volume, non-commercial use; refuses public resolvers |
+| [abuse.ch URLhaus](https://urlhaus.abuse.ch) | Malware URL database | Free Auth-Key; CC0 data |
+| [hstspreload.org](https://hstspreload.org) | HSTS preload list status | Public API (Chromium project) |
 | [enthec/webappanalyzer](https://github.com/enthec/webappanalyzer) | Technology fingerprints (`backend/app/data/fingerprints`) | **GPL-3.0**: see the `LICENSE` and `NOTICE.md` in that directory |
 | [Retire.js](https://github.com/RetireJS/retire.js) | Vulnerable JavaScript library data (`backend/app/data/retirejs`) | **Apache-2.0**: see the `LICENSE.md` and `NOTICE.md` in that directory |
 | [can-i-take-over-xyz](https://github.com/EdOverflow/can-i-take-over-xyz) | Reference links for takeover-prone services | Linked, not copied |
@@ -406,6 +435,8 @@ ReconLens's own code is MIT-licensed (see [`LICENSE`](LICENSE)). The bundled fin
 - [x] JavaScript secrets, buckets and endpoints; parameter classification
 - [x] Scan comparison, share links, CWE/OWASP labels, CSV/Markdown export
 - [x] Vulnerable JS libraries, SRI, favicon hash, lookalike domains, MTA-STS / TLS-RPT / BIMI
+- [x] Finding triage, multi-domain scans, personal API keys
+- [x] IP ownership / cloud mapping, URLhaus + Spamhaus blocklists, HSTS preload status, WordPress plugin versions
 - [ ] **Local active mode:** self-hosted only, never on the public demo. Nmap service detection and Nuclei templates, gated behind explicit scope files.
 - [ ] Scheduled re-scans and webhook alerts (needs a background worker, so not on the free tier)
 

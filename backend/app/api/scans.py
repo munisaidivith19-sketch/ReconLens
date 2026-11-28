@@ -6,7 +6,7 @@ from typing import Any
 
 from bson import ObjectId
 from bson.errors import InvalidId
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, HTTPException, Path, Query, Request, status
 from fastapi.responses import Response
 
 from app.api.deps import CurrentUser, Database, ScanUser, client_ip
@@ -25,7 +25,16 @@ from app.core.rate_limit import (
 )
 from app.core.ssrf_guard import BlockedTargetError, validate_target
 from app.db import SCAN_TTL_SECONDS, SHARE_DAYS
-from app.models.scan import ScanCreate, ScanDetail, ScanPage, ScanStatus, ScanSummary
+from app.models.scan import (
+    BatchCreate,
+    ScanCreate,
+    ScanDetail,
+    ScanPage,
+    ScanStatus,
+    ScanSummary,
+    TriageStatus,
+    TriageUpdate,
+)
 from app.services import scan_runner
 
 router = APIRouter(prefix="/api/scans", tags=["scans"])
@@ -47,6 +56,7 @@ def _summary(doc: dict[str, Any]) -> ScanSummary:
         created_at=doc["created_at"],
         finished_at=doc.get("finished_at"),
         cached=bool(doc.get("cached_from")),
+        batch_id=doc.get("batch_id"),
     )
 
 
@@ -87,8 +97,18 @@ async def create_scan(body: ScanCreate, request: Request, user: ScanUser, db: Da
                 "message": "Confirm you are authorized to test this target.",
             },
         )
+    return await _start_scan(body.target, request, user, db)
+
+
+async def _start_scan(
+    raw_target: str, request: Request, user: dict[str, Any], db: Any, batch_id: str | None = None
+) -> dict[str, Any]:
+    """Validate one target and start (or reuse) a scan. Shared by single and batch scans.
+
+    Raises HTTPException with the same codes as POST /api/scans.
+    """
     try:
-        target, _ips = await validate_target(body.target)
+        target, _ips = await validate_target(raw_target)
     except BlockedTargetError as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -131,12 +151,14 @@ async def create_scan(body: ScanCreate, request: Request, user: ScanUser, db: Da
 
     base_doc = {
         "user_id": user_id,
-        "input": body.target.strip()[:300],
+        "input": raw_target.strip()[:300],
         "domain": domain,
         "confirmed_authorized": True,
         "authorized_at": now,
         "created_at": now,
     }
+    if batch_id:
+        base_doc["batch_id"] = batch_id
 
     # Domain scanned in the last 24h: copy the finished results for this user (no quota used).
     cached_id = await get_cached_scan_id(db, domain)
@@ -206,6 +228,94 @@ async def create_scan(body: ScanCreate, request: Request, user: ScanUser, db: Da
     doc["_id"] = res.inserted_id
     scan_runner.start_scan(db, res.inserted_id)
     return {"scan": _summary(doc).model_dump(mode="json"), "cached": False, "quota_remaining": remaining}
+
+
+# ------------------------------------------------------------------ multi-domain batches
+# Registered before the /{scan_id}/... routes so "batch" is never read as a scan id.
+
+
+@router.post("/batch", status_code=status.HTTP_201_CREATED)
+async def create_batch(
+    body: BatchCreate, request: Request, user: CurrentUser, db: Database
+) -> dict[str, Any]:
+    """Start scans for up to MAX_BATCH_TARGETS domains. Each one uses the normal checks and quota."""
+    targets: list[str] = []
+    for t in body.targets:
+        t = t.strip()
+        if t and t.lower() not in {x.lower() for x in targets}:
+            targets.append(t)
+    if not targets:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "no_targets", "message": "Enter at least one domain."},
+        )
+    batch_id = secrets.token_hex(12)
+    items: list[dict[str, Any]] = []
+    for target in targets:
+        try:
+            started = await _start_scan(target, request, user, db, batch_id=batch_id)
+            items.append({"target": target, "ok": True, **started})
+        except HTTPException as exc:
+            detail = (
+                exc.detail if isinstance(exc.detail, dict) else {"code": "error", "message": str(exc.detail)}
+            )
+            items.append({"target": target, "ok": False, "error": detail})
+    scan_ids = [i["scan"]["id"] for i in items if i["ok"]]
+    now = datetime.now(UTC)
+    await db.batches.insert_one(
+        {
+            "batch_id": batch_id,
+            "user_id": str(user["_id"]),
+            "targets": targets,
+            "scan_ids": scan_ids,
+            "errors": [{"target": i["target"], **i["error"]} for i in items if not i["ok"]],
+            "created_at": now,
+        }
+    )
+    return {"batch_id": batch_id, "items": items}
+
+
+@router.get("/batch/{batch_id}")
+async def get_batch(batch_id: str, user: CurrentUser, db: Database) -> dict[str, Any]:
+    if not re.fullmatch(r"[0-9a-f]{24}", batch_id):
+        raise _NOT_FOUND
+    batch = await db.batches.find_one({"batch_id": batch_id, "user_id": str(user["_id"])})
+    if not batch:
+        raise _NOT_FOUND
+    oids = [ObjectId(i) for i in batch["scan_ids"]]
+    projection = {"results": 0, "stages": 0, "ai_report": 0}
+    docs = await db.scans.find({"_id": {"$in": oids}, "user_id": str(user["_id"])}, projection).to_list(
+        length=len(oids)
+    )
+    by_id = {str(d["_id"]): d for d in docs}
+    scans = []
+    for sid in batch["scan_ids"]:
+        d = by_id.get(sid)
+        if not d:
+            continue  # expired with the 30-day scan TTL
+        severities: dict[str, int] = {}
+        for f in d.get("findings") or []:
+            severities[f.get("severity", "info")] = severities.get(f.get("severity", "info"), 0) + 1
+        top = sorted(
+            (f for f in d.get("findings") or [] if f.get("severity") in ("critical", "high", "medium")),
+            key=lambda f: ["critical", "high", "medium"].index(f["severity"]),
+        )[:5]
+        scans.append(
+            {
+                **_summary(d).model_dump(mode="json"),
+                "severities": severities,
+                "top_findings": [
+                    {"id": f["id"], "title": f["title"], "severity": f["severity"]} for f in top
+                ],
+            }
+        )
+    return {
+        "batch_id": batch_id,
+        "created_at": batch["created_at"],
+        "targets": batch["targets"],
+        "errors": batch.get("errors", []),
+        "scans": scans,
+    }
 
 
 @router.get("", response_model=ScanPage)
@@ -334,3 +444,45 @@ async def export_scan(scan_id: str, user: ScanUser, db: Database) -> Response:
         media_type="application/json",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ------------------------------------------------------------------ triage (per user and domain)
+
+
+async def _triage_items(db: Any, user_id: str, domain: str) -> dict[str, dict[str, Any]]:
+    docs = await db.triage.find({"user_id": user_id, "domain": domain}).to_list(length=2000)
+    return {
+        d["finding_id"]: {"status": d["status"], "note": d.get("note", ""), "updated_at": d["updated_at"]}
+        for d in docs
+    }
+
+
+@router.get("/{scan_id}/triage")
+async def get_triage(scan_id: str, user: CurrentUser, db: Database) -> dict[str, Any]:
+    """Triage decisions for this scan's domain. They carry over to later scans of the same domain."""
+    doc = await _owned_scan(db, scan_id, user)
+    return {"items": await _triage_items(db, str(user["_id"]), doc["domain"])}
+
+
+@router.put("/{scan_id}/triage/{finding_id}")
+async def set_triage(
+    scan_id: str,
+    body: TriageUpdate,
+    user: CurrentUser,
+    db: Database,
+    finding_id: str = Path(min_length=1, max_length=300),
+) -> dict[str, Any]:
+    doc = await _owned_scan(db, scan_id, user)
+    if not any(f.get("id") == finding_id for f in doc.get("findings") or []):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"code": "finding_not_found", "message": "That finding is not part of this scan."},
+        )
+    key = {"user_id": str(user["_id"]), "domain": doc["domain"], "finding_id": finding_id}
+    if body.status == TriageStatus.OPEN and not body.note.strip():
+        await db.triage.delete_many(key)  # back to the default: no record needed
+        return {"finding_id": finding_id, "item": None}
+    now = datetime.now(UTC)
+    item = {"status": body.status.value, "note": body.note.strip(), "updated_at": now}
+    await db.triage.update_one(key, {"$set": {**key, **item}}, upsert=True)
+    return {"finding_id": finding_id, "item": item}

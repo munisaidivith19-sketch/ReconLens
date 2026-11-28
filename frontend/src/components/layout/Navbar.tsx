@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Link, NavLink, useNavigate } from 'react-router'
-import { History, LogOut, Menu, Moon, Radar, ScrollText, Sun, X } from 'lucide-react'
+import { History, KeyRound, LogOut, Menu, Moon, Radar, ScrollText, Sun, X } from 'lucide-react'
 
 import { useAuth } from '../../hooks/useAuth'
 import { cn } from '../ui/cn'
@@ -60,6 +60,7 @@ export function Navbar() {
     ? [
         { to: '/', label: 'New scan', icon: Radar, end: true },
         { to: '/history', label: 'History', icon: History, end: false },
+        { to: '/settings/api-keys', label: 'API keys', icon: KeyRound, end: false },
         { to: '/terms', label: 'Responsible use', icon: ScrollText, end: false },
       ]
     : [

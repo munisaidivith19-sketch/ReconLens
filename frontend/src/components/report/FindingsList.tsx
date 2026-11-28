@@ -6,13 +6,15 @@ import { SEVERITY_LABEL, severityClass } from '../ui/Badge'
 import { Card, CardHeader } from '../ui/Card'
 import { cn } from '../ui/cn'
 import { Empty } from '../ui/Disclosure'
+import { RESOLVED, type TriageApi } from '../../hooks/useTriage'
 import { FindingCard } from './FindingCard'
 import { taxonomyFor } from './taxonomy'
 
-export function FindingsList({ findings, domain }: { findings: Finding[]; domain?: string }) {
+export function FindingsList({ findings, domain, triage }: { findings: Finding[]; domain?: string; triage?: TriageApi }) {
   const [active, setActive] = useState<Set<Severity>>(() => new Set(SEVERITIES.filter((s) => s !== 'info')))
   const [query, setQuery] = useState('')
   const [quickOnly, setQuickOnly] = useState(false)
+  const [hideResolved, setHideResolved] = useState(false)
 
   const counts = useMemo(() => {
     const c: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 }
@@ -27,6 +29,10 @@ export function FindingsList({ findings, domain }: { findings: Finding[]; domain
       .filter((f) => active.has(f.severity))
       .filter((f) => !quickOnly || Boolean(taxonomyFor(f.id).quickWin))
       .filter((f) => {
+        const st = triage?.items[f.id]?.status
+        return !hideResolved || !st || !RESOLVED.has(st)
+      })
+      .filter((f) => {
         if (!q) return true
         const tax = taxonomyFor(f.id)
         const hay = [f.title, f.evidence, f.recommendation, f.category, f.id, tax.cwe ? `cwe-${tax.cwe.id}` : '', tax.owasp?.id ?? '']
@@ -40,7 +46,7 @@ export function FindingsList({ findings, domain }: { findings: Finding[]; domain
         map.set(f.category, list)
       })
     return [...map.entries()].sort((a, b) => b[1].length - a[1].length)
-  }, [findings, active, query, quickOnly])
+  }, [findings, active, query, quickOnly, hideResolved, triage])
 
   const toggle = (s: Severity) =>
     setActive((prev) => {
@@ -81,6 +87,17 @@ export function FindingsList({ findings, domain }: { findings: Finding[]; domain
         >
           Quick wins only
         </button>
+        {triage && (
+          <button
+            type="button"
+            aria-pressed={hideResolved}
+            onClick={() => setHideResolved((v) => !v)}
+            className={cn('btn btn-sm', hideResolved ? 'btn-primary' : '')}
+            title="Hide findings marked fixed, false positive or accepted risk"
+          >
+            Hide resolved
+          </button>
+        )}
       </div>
 
       <div role="group" aria-label="Filter by severity" className="no-print mb-5 flex flex-wrap gap-2">
@@ -114,7 +131,15 @@ export function FindingsList({ findings, domain }: { findings: Finding[]; domain
               <ul className="flex flex-col gap-2">
                 {list.map((f) => (
                   <li key={f.id}>
-                    <FindingCard finding={f} domain={domain} />
+                    <FindingCard
+                      finding={f}
+                      domain={domain}
+                      triage={
+                        triage
+                          ? { item: triage.items[f.id], save: (st, note) => triage.save(f.id, st, note) }
+                          : undefined
+                      }
+                    />
                   </li>
                 ))}
               </ul>

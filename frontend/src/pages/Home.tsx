@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Bug, Clock3, Fingerprint, Globe, Lock, LogIn, Mail, Radar, Route, UserPlus } from 'lucide-react'
 
 import { api, ApiError } from '../api/client'
+import { BatchForm } from '../components/scan/BatchForm'
 import { ScanForm } from '../components/scan/ScanForm'
 import { ScopeConfirm } from '../components/scan/ScopeConfirm'
 import { WakeUpNotice } from '../components/scan/WakeUpNotice'
@@ -149,6 +150,12 @@ export default function Home() {
             />
           )}
         </Card>
+
+        {!isGuest && (
+          <Card className="p-4 sm:p-5" aria-label="Multi-domain scan">
+            <BatchForm remaining={remaining} />
+          </Card>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 px-1 text-sm text-muted">
           <span className="flex items-center gap-2">
